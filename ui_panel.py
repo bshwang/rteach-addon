@@ -141,6 +141,8 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.prop(p, "selected_teach_point", text="Selected")
             row.operator("object.preview_tcp_prev", text="", icon='FRAME_PREV')
             row.operator("object.preview_tcp_next", text="", icon='FRAME_NEXT')
+            row = box2.row(align=True)
+            row.operator("object.export_teach_data", text="Export Teach Data", icon='EXPORT')
 
             obj = p.selected_teach_point
             if obj:
