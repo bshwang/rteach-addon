@@ -67,6 +67,7 @@ classes = (
     OBJECT_OT_apply_global_speed,
     OBJECT_OT_tcp_list_select,
     UI_UL_tcp_list,
+    OBJECT_OT_export_teach_data,
 )
 
 def register():
