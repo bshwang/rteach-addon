@@ -1,4 +1,4 @@
-#init.py (0604)
+#init.py 
 
 bl_info = {
     "name": "Robot Simulator for Blender",
@@ -10,16 +10,21 @@ bl_info = {
     "category": "Animation"
 }
 
+import os
+import sys
+
+addon_dir = os.path.dirname(__file__)
+if addon_dir not in sys.path:
+    sys.path.append(addon_dir)
+
 import bpy
 from bpy.props import EnumProperty, PointerProperty
 
-from .settings import IKMotionProperties
-from .settings import JogProperties
 from .core import *
-
-from .ops_teach import *
-from .ui_panel import *
-from .settings import TcpItem
+from .ops_teach_main import classes as main_classes
+from .ops_teach_util import classes as util_classes
+from .ui_panel import classes as ui_classes
+from .settings import IKMotionProperties, JogProperties, TcpItem
 
 # Define EnumProperty immediately on import (before class registration)
 if not hasattr(bpy.types.Object, "motion_enum"):
@@ -32,42 +37,14 @@ if not hasattr(bpy.types.Object, "motion_enum"):
         get=lambda self: self.get("motion_type", "JOINT"),
         set=lambda self, v: self.__setitem__("motion_type", v),
     )
-
+    
 classes = (
     TcpItem,
     IKMotionProperties,
     JogProperties,
-    OBJECT_OT_compute_ik_ur,
-    OBJECT_OT_move_l,
-    OBJECT_OT_record_goal_as_empty,
-    OBJECT_OT_cycle_solution_ur,
-    OBJECT_OT_clear_path_visuals,
-    OBJECT_OT_apply_cycle_pose,
-    VIEW3D_PT_ur_ik,
-    OBJECT_OT_draw_teach_path,
-    OBJECT_OT_playback_teach_bake,
-    OBJECT_OT_playback_cycle_solution,
-    OBJECT_OT_playback_apply_solution,
-    OBJECT_OT_tcp_move_up,
-    OBJECT_OT_tcp_move_down,
-    OBJECT_OT_tcp_update_position,
-    OBJECT_OT_tcp_delete,
-    OBJECT_OT_reindex_tcp_points,
-    OBJECT_OT_clear_all_tcp_points,
-    OBJECT_OT_preview_tcp_next,
-    OBJECT_OT_preview_tcp_prev,
-    OBJECT_OT_toggle_motion_type,
-    OBJECT_OT_clear_bake_keys,
-    OBJECT_OT_snap_goal_to_active,
-    OBJECT_OT_update_fixed_q3_from_pose,
-    OBJECT_OT_snap_gizmo_on_path,
-    OBJECT_OT_sync_robot_type,
-    OBJECT_OT_focus_on_target,
-    OBJECT_OT_apply_global_wait,
-    OBJECT_OT_apply_global_speed,
-    OBJECT_OT_tcp_list_select,
-    UI_UL_tcp_list,
-    OBJECT_OT_export_teach_data,
+    *main_classes,
+    *util_classes,
+    *ui_classes, 
 )
 
 def register():
@@ -82,3 +59,4 @@ def unregister():
             bpy.utils.unregister_class(cls)
         except Exception:
             pass
+        

@@ -2,7 +2,6 @@ import numpy as np
 import copy
 import math
 from typing import List, NewType
-from python_run_import import *
 
 # Constants for solver
 robot_nq: int = 7

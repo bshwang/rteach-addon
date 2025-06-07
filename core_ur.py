@@ -1,6 +1,6 @@
-# core_ur.py (0604)
+# core_ur.py
 
-from rteach.robot_state import get_active_robot
+from .robot_state import get_active_robot
 from ur_analytic_ik_ext import ur16e, ur5e
 import numpy as np
 

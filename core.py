@@ -1,4 +1,4 @@
-# core.py (0604)
+# core.py
 
 import math
 import bpy
@@ -26,7 +26,7 @@ def get_BONES():
 
 def get_joint_limits():
     if get_active_robot().startswith("UR"):
-        return [(-360, 360)] * 6  # 6축
+        return [(-360, 360)] * 6  
     else:
         return [
             (-170, 170),  # j1
@@ -217,3 +217,39 @@ def solve_and_apply(ctx, p, T_goal, frame, insert_keyframe=True):
     T_fk = fk_func(q_sel)
 
     return True
+
+def get_best_ik_solution(p, T_goal, q_ref=None):
+    T_base   = compute_base_matrix(p)
+    T_offset = compute_tcp_offset_matrix(p)
+    T_flange = np.linalg.inv(T_base) @ T_goal @ np.linalg.inv(T_offset)
+
+    ik_solver = get_inverse_kinematics(p)
+    sols = ik_solver(T_flange)
+    if not sols or len(sols) == 0:
+        return None, []
+
+    def ang_diff(a, b):
+        return ((a - b + math.pi) % (2 * math.pi)) - math.pi
+
+    if q_ref is not None:
+        best = min(
+            range(len(sols)),
+            key=lambda i: sum(
+                abs(ang_diff(sols[i][j], q_ref[j]))
+                for j in range(min(len(sols[i]), len(q_ref)))  # ✅ 길이 보정
+            )
+        )
+    elif get_active_robot().startswith("UR"):
+        ss = -1 if p.shoulder == 'L' else 1
+        es = -1 if p.elbow   == 'U' else 1
+        ws = -1 if p.wrist   == 'I' else 1
+
+        def score(q):
+            return ((math.copysign(1, q[0]) == ss) +
+                    (math.copysign(1, q[2]) == es) +
+                    (math.copysign(1, q[4]) == ws))
+        best = max(range(len(sols)), key=lambda i: score(sols[i]))
+    else:
+        best = 0
+
+    return sols[best], sols

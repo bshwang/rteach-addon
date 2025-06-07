@@ -1,8 +1,8 @@
-# ui_panel.py (0604)
+# ui_panel.py 
 import bpy
-from rteach.settings import IKMotionProperties, JogProperties
-from rteach.robot_state import get_active_robot
-from .core import get_BONES
+from .settings import IKMotionProperties, JogProperties
+from .robot_state import get_active_robot
+from .core import get_BONES, get_armature_bones, get_joint_limits
 
 class UI_UL_tcp_list(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
@@ -61,7 +61,6 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
                 box.operator("object.snap_goal_to_active", text="Snap Target to Selected", icon='PIVOT_ACTIVE')
 
         # ── Jog Mode ──
-        from .core import get_armature_bones, get_joint_limits
         L.separator()
         box_j = L.box()
         row = box_j.row()
@@ -105,18 +104,18 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
                 row.prop(p, "fixed_q3_deg", text="R angle(q3)", slider=True)
 
             row = box1.row(align=True)
-            row.operator("object.compute_ik_ur", text="Go To", icon='VIEW_CAMERA')
+            row.operator("object.teach_pose", text="Go To", icon='VIEW_CAMERA')
             row.prop(p, "auto_record", text="Record", toggle=True, icon='REC')
 
             pose_box = box1.box()
             pose_box.label(text=f"Pose {p.current_index + 1}/{len(p.solutions)}")
             row = pose_box.row(align=True)
             row.prop(p, "solution_index_ui", text="Pose Index")
-            row.operator("object.cycle_solution_ur", text="◀").direction = 'PREV'
-            row.operator("object.cycle_solution_ur", text="▶").direction = 'NEXT'
+            row.operator("object.cycle_pose_preview", text="◀").direction = 'PREV'
+            row.operator("object.cycle_pose_preview", text="▶").direction = 'NEXT'
             pose_box.prop(p, "use_last_pose", text="Keep Last Pose")
             row = pose_box.row(align=True)
-            row.operator("object.apply_cycle_pose", text="Apply Pose", icon='KEY_HLT')
+            row.operator("object.apply_preview_pose", text="Apply Pose", icon='KEY_HLT')
 
             # ▶ Step 2
             box2 = box.box()
@@ -135,7 +134,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.operator("object.tcp_move_up", text="", icon='TRIA_UP')
             row.operator("object.tcp_move_down", text="", icon='TRIA_DOWN')
             row.operator("object.tcp_delete", text="", icon='X')  
-            row.operator("object.tcp_update_position", text="Pose Update", icon='EXPORT')
+            row.operator("object.update_tcp_pose", text="Pose Update", icon='EXPORT')
 
             row = box2.row(align=True)
             row.prop(p, "selected_teach_point", text="Selected")
@@ -185,7 +184,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.prop_search(p, "bake_end_tcp", bpy.data, "objects", text="")
 
             row = box3.row(align=True)
-            row.operator("object.playback_teach_bake", text="Bake", icon='FILE_TICK')
+            row.operator("object.bake_teach_sequence", text="Bake", icon='FILE_TICK')
             row.operator("object.clear_bake_keys", text="", icon='TRASH')
 
             if obj:
@@ -216,3 +215,8 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.scale_x = 1.1
             row.label(text="High Precision Linear Mode")
             row.prop(p, "precise_linear", text="", icon='CONSTRAINT', toggle=True)
+            
+classes = [
+    UI_UL_tcp_list,
+    VIEW3D_PT_ur_ik,
+]
