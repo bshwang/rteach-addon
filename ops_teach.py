@@ -194,7 +194,7 @@ class OBJECT_OT_move_l(bpy.types.Operator):
 
         p.status_text = f"Fast LIN done ({success}/{steps})"
         return {'FINISHED'}
- ──────────────────────────────────────────────────────────────
+ # ──────────────────────────────────────────────────────────────
 
 class OBJECT_OT_clear_path_visuals(bpy.types.Operator):
 	bl_idname = "object.clear_path_visuals"
@@ -233,21 +233,21 @@ class OBJECT_OT_record_goal_as_empty(bpy.types.Operator):
         dup.matrix_world = tgt.matrix_world
         dup.scale        = tgt.scale * 0.5
         dup["index"]     = new_idx
-		dup["motion_type"]    = "LINEAR"
-		dup["fixed_q3"] = p.fixed_q3
-    	dup["speed"] = p.motion_speed
-    	dup["wait_time_sec"] = p.wait_time_sec
+        dup["motion_type"]    = "LINEAR"
+        dup["fixed_q3"] = p.fixed_q3
+        dup["speed"] = p.motion_speed
+        dup["wait_time_sec"] = p.wait_time_sec
     	
-    	dup.show_name = True
-    	p.selected_teach_point = dup
-
-   	 if p.solutions and len(p.solutions) > p.current_index:
-       	 dup["solution_index"] = p.current_index
-   	     dup["joint_pose"] = list(map(float, p.solutions[p.current_index]))       
-
-    	coll.objects.link(dup)
-    	update_tcp_sorted_list()
-
+        dup.show_name = True
+        p.selected_teach_point = dup
+        
+        if p.solutions and len(p.solutions) > p.current_index:
+            dup["solution_index"] = p.current_index
+            dup["joint_pose"] = list(map(float, p.solutions[p.current_index]))       
+            
+        coll.objects.link(dup)
+        update_tcp_sorted_list()
+        
         return {'FINISHED'}
 
 # ──────────────────────────────────────────────────────────────
@@ -265,13 +265,13 @@ class OBJECT_OT_playback_cycle_solution(bpy.types.Operator):
         if not tgt or not arm:
             self.report({'ERROR'}, "Target or Armature not set")
             return {'CANCELLED'}
-            
-		q = tgt.matrix_world.to_quaternion()
-		T_goal = np.eye(4)
-		T_goal[:3, :3] = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix() 
-		T_goal[:3, 3]  = np.array(tgt.matrix_world.to_translation())
-		
-		T_flange = (
+        
+        q = tgt.matrix_world.to_quaternion()
+        T_goal = np.eye(4)
+        T_goal[:3, :3] = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix() 
+        T_goal[:3, 3]  = np.array(tgt.matrix_world.to_translation())
+        
+        T_flange = (
 		    np.linalg.inv(compute_base_matrix(p))
 		    @ T_goal
 		    @ np.linalg.inv(compute_tcp_offset_matrix(p))
@@ -933,8 +933,8 @@ def preview_obj_pose(ctx, obj, forward: bool):
     
     for o in ctx.selected_objects:
     	o.select_set(False)
-	obj.select_set(True)
-	ctx.view_layer.objects.active = obj
+    obj.select_set(True)
+    ctx.view_layer.objects.active = obj
 
     if "joint_pose" in obj and arm:
         apply_solution(arm, obj["joint_pose"], ctx.scene.frame_current, insert_keyframe=False)
@@ -1217,7 +1217,7 @@ class OBJECT_OT_focus_on_target(bpy.types.Operator):
         return {'FINISHED'}
         
 # ──────────────────────────────────────────────────────────────       
- class OBJECT_OT_apply_global_speed(bpy.types.Operator):
+class OBJECT_OT_apply_global_speed(bpy.types.Operator):
     """Apply current TCP speed to all Teach Points"""
     bl_idname = "object.apply_global_speed"
     bl_label = "Apply Speed to All"
@@ -1295,7 +1295,8 @@ class OBJECT_OT_tcp_list_select(bpy.types.Operator):
 
         p.status_text = f"Snapped and previewed {obj.name}"
         return {'FINISHED'}
-        
+    
+# ──────────────────────────────────────────────────────────────         
 def update_tcp_sorted_list():
     p = bpy.context.scene.ik_motion_props
     coll = bpy.data.collections.get("Teach data")
@@ -1310,3 +1311,52 @@ def update_tcp_sorted_list():
 
     p.tcp_list_index = min(p.tcp_list_index, len(p.tcp_sorted_list) - 1)
     bpy.context.area.tag_redraw()
+    
+# ──────────────────────────────────────────────────────────────     
+class OBJECT_OT_export_teach_data(bpy.types.Operator):
+    """Export Teach Data (TCP pose + joint angles)"""
+    bl_idname = "object.export_teach_data"
+    bl_label = "Export Teach Data (.json)"
+
+    def execute(self, ctx):
+        import json
+        from mathutils import Matrix, Quaternion
+        from pathlib import Path
+
+        p = ctx.scene.ik_motion_props
+        base = p.base_object
+        coll = bpy.data.collections.get("Teach data")
+        if not base or not coll:
+            self.report({'ERROR'}, "Base or Teach data not found")
+            return {'CANCELLED'}
+
+        base_inv = base.matrix_world.inverted()
+        tps = sorted(coll.objects, key=lambda o: o.get("index", 9999))
+
+        data = []
+        for tp in tps:
+            mat_rel = base_inv @ tp.matrix_world
+            pos = mat_rel.to_translation()
+            quat = mat_rel.to_quaternion()
+
+            q = tp.get("joint_pose")
+            if not q:
+                continue
+
+            data.append({
+                "name": tp.name,
+                "position_m": [round(pos.x, 6), round(pos.y, 6), round(pos.z, 6)],
+                "quaternion": [round(quat.x, 6), round(quat.y, 6), round(quat.z, 6), round(quat.w, 6)],
+                "joint_pose_rad": [round(v, 6) for v in q]
+            })
+
+        if not data:
+            self.report({'WARNING'}, "No teach points with joint data")
+            return {'CANCELLED'}
+
+        path = Path(bpy.path.abspath("//export_teach_data.json"))
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+
+        self.report({'INFO'}, f"Exported {len(data)} TCPs → {path.name}")
+        return {'FINISHED'}
