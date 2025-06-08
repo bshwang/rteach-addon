@@ -244,6 +244,9 @@ class IKMotionProperties(bpy.types.PropertyGroup):
     show_teach:   bpy.props.BoolProperty(name="Show Teach",   default=True)
     show_linear:  bpy.props.BoolProperty(name="Show Linear",  default=True)
     show_pose:    bpy.props.BoolProperty(name="Show Pose",    default=True)
+    show_step1: bpy.props.BoolProperty(name="Show Step 1", default=True)
+    show_step2: bpy.props.BoolProperty(name="Show Step 2", default=True)
+    show_step3: bpy.props.BoolProperty(name="Show Step 3", default=True)
 
     target_rel_x: bpy.props.FloatProperty(name="X (mm)", default=0.0)
     target_rel_y: bpy.props.FloatProperty(name="Y (mm)", default=0.0)
