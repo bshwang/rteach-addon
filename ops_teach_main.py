@@ -11,8 +11,9 @@ from .robot_state import get_active_robot, set_active_robot
 from .core import (
     solve_and_apply, apply_solution, get_inverse_kinematics, compute_base_matrix, 
     compute_tcp_offset_matrix, get_forward_kinematics, 
-    sort_solutions, get_BONES, get_best_ik_solution,
+    sort_solutions, get_BONES, get_best_ik_solution, get_armature_bones
 )
+from .ops_teach_util import update_tcp_sorted_list
 from .core_iiwa import linear_move
 from pathlib import Path
 
@@ -831,7 +832,68 @@ class OBJECT_OT_tcp_list_select(bpy.types.Operator):
 
         p.status_text = f"Snapped and previewed {obj.name}"
         return {'FINISHED'}
-    
+# ──────────────────────────────────────────────────────────────    
+class OBJECT_OT_keyframe_joint_pose(bpy.types.Operator):
+    bl_idname = "object.keyframe_joint_pose"
+    bl_label = "Keyframe Pose"
+    bl_description = "Insert keyframes for the current Jog slider pose at current frame"
+
+    def execute(self, ctx):
+        from .core import get_BONES, get_AXES
+        p = ctx.scene.ik_motion_props
+        jog = ctx.scene.jog_props
+        arm = bpy.data.objects.get(p.armature)
+
+        if not arm:
+            self.report({'ERROR'}, "Armature not found")
+            return {'CANCELLED'}
+
+        bones = get_BONES()
+        axes  = get_AXES()
+
+        frame = ctx.scene.frame_current
+        for i, bn in enumerate(bones):
+            pb = arm.pose.bones.get(bn)
+            if not pb:
+                continue
+
+            axis = axes[i]
+            angle = getattr(jog, f"joint_{i}", 0.0)
+            pb.rotation_mode = 'XYZ'
+            rot = [0, 0, 0]
+            idx = {'x': 0, 'y': 1, 'z': 2}[axis]
+            rot[idx] = angle
+            pb.rotation_euler = rot
+            pb.keyframe_insert(data_path="rotation_euler", frame=frame, index=idx)
+
+        self.report({'INFO'}, f"Keyframes inserted at frame {frame}")
+        p.status_text = f"Jog pose keyframed at frame {frame}"
+        return {'FINISHED'}
+        
+# ──────────────────────────────────────────────────────────────    
+class OBJECT_OT_record_tcp_from_jog(bpy.types.Operator):
+    bl_idname = "object.record_tcp_from_jog"
+    bl_label = "Record TCP from Jog"
+
+    def execute(self, ctx):
+        p = ctx.scene.ik_motion_props
+        jog = ctx.scene.jog_props
+        bones = get_armature_bones()
+        q = []
+
+        for i, bn in enumerate(bones):
+            val = getattr(jog, f"joint_{i}", 0.0)
+            q.append(val)
+
+        # Store current jog values as solution so record_tcp_point can use it
+        p.solutions = [q]
+        p.current_index = 0
+
+        # Reuse existing record operator
+        bpy.ops.object.record_tcp_point('INVOKE_DEFAULT')
+        p.status_text = "TCP recorded from Jog values"
+        return {'FINISHED'}
+        
 # ──────────────────────────────────────────────────────────────    
 classes = (
     OBJECT_OT_teach_pose,
@@ -849,4 +911,6 @@ classes = (
     OBJECT_OT_apply_global_wait,
     OBJECT_OT_apply_global_speed,
     OBJECT_OT_tcp_list_select,
+    OBJECT_OT_keyframe_joint_pose,
+    OBJECT_OT_record_tcp_from_jog,    
 )
