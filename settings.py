@@ -1,4 +1,4 @@
-# setting.py (0604)
+# setting.py
 
 import bpy
 import json
