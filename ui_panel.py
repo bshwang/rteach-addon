@@ -1,5 +1,5 @@
 import bpy
-from .settings import IKMotionProperties, JogProperties
+from .settings import IKMotionProperties, JogProperties, StageJogProperties
 from .robot_state import get_active_robot
 from .core import get_BONES, get_armature_bones, get_joint_limits
 
@@ -24,9 +24,11 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         self.draw_setup_section(L, ctx)
         self.draw_target_section(L, ctx)
         self.draw_jog_section(L, ctx)
+        self.draw_stage_jog_section(L, ctx)
         self.draw_step1(L, ctx)
         self.draw_step2(L, ctx)
         self.draw_step3(L, ctx)
+        self.draw_io_section(L, ctx)
 
     def draw_robot_selector(self, L, ctx):
         p = ctx.scene.ik_motion_props
@@ -70,7 +72,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         box = L.box()
         row = box.row()
         icon = 'TRIA_DOWN' if p.show_jog else 'TRIA_RIGHT'
-        row.prop(p, "show_jog", icon=icon, text="Jog Mode", emboss=False)
+        row.prop(p, "show_jog", icon=icon, text="Robot Jog Mode", emboss=False)
         if not p.show_jog:
             return
 
@@ -88,7 +90,6 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.label(text=f"  {max_deg:.0f}°")
 
         box.separator()
-        box.label(text="Jog → Pose Control")
         row = box.row(align=True)
         row.operator("object.keyframe_joint_pose", text="Keyframe Pose", icon='KEY_HLT')
         row.operator("object.record_tcp_from_jog", text="Record as TCP", icon='EMPTY_AXIS')
@@ -113,7 +114,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         pose_box = box.box()
         pose_box.label(text=f"Pose {p.current_index + 1}/{len(p.solutions)}")
         row = pose_box.row(align=True)
-        row.prop(p, "solution_index_ui", text="Pose Index")
+        row.prop(p, "solution_index_ui", text="Index")
         row.operator("object.cycle_pose_preview", text="◀").direction = 'PREV'
         row.operator("object.cycle_pose_preview", text="▶").direction = 'NEXT'
         pose_box.prop(p, "use_last_pose", text="Keep Last Pose")
@@ -143,16 +144,20 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row = box.row(align=True)
         row.operator("object.tcp_move_up", text="", icon='TRIA_UP')
         row.operator("object.tcp_move_down", text="", icon='TRIA_DOWN')
-        row.operator("object.tcp_delete", text="", icon='X')
+        row.operator("object.tcp_move_down", text="", icon='TRIA_DOWN')
+        
+        if p.selected_teach_point:
+            op = row.operator("object.tcp_delete", text="", icon='X')
+            op.name = p.selected_teach_point.name
+        else:
+            row.operator("object.tcp_delete", text="", icon='X')
         row.operator("object.update_tcp_pose", text="Pose Update", icon='EXPORT')
+        row.operator("object.recompute_selected_tcp", text="Recompute", icon='CON_ROTLIKE')
 
         row = box.row(align=True)
         row.prop(p, "selected_teach_point", text="Selected")
         row.operator("object.preview_tcp_prev", text="", icon='FRAME_PREV')
         row.operator("object.preview_tcp_next", text="", icon='FRAME_NEXT')
-
-        row = box.row(align=True)
-        row.operator("object.export_teach_data", text="Export Teach Data", icon='EXPORT')
 
         obj = p.selected_teach_point
         if obj:
@@ -213,3 +218,68 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.scale_x = 1.1
             row.label(text="High Precision Linear Mode")
             row.prop(p, "precise_linear", text="", icon='CONSTRAINT', toggle=True)
+
+def draw_stage_jog_section(self, L, ctx):
+    from .settings import StageJogProperties
+    p = ctx.scene.ik_motion_props
+    jog_props = p.stage_props
+
+    box = L.box()
+    row = box.row()
+    icon = 'TRIA_DOWN' if p.show_stage else 'TRIA_RIGHT'
+    row.prop(p, "show_stage", icon=icon, text="Stage Jog Mode", emboss=False)
+
+    if not p.show_stage:
+        return
+
+    box.operator("object.refresh_stage_jog", text="Refresh", icon='FILE_REFRESH')
+
+    if not jog_props or not StageJogProperties.__annotations__:
+        box.label(text="No stage jog sliders found", icon='INFO')
+        return
+
+    for prop_name in StageJogProperties.__annotations__.keys():
+        row = box.row(align=True)
+        row.label(text=prop_name)
+        row.prop(jog_props, prop_name, text="", slider=True)
+        op_kf = row.operator("object.keyframe_stage_joint", text="", icon='KEY_HLT')
+        op_kf.name = prop_name
+        op_sel = row.operator("object.focus_stage_joint", text="", icon='RESTRICT_SELECT_OFF')
+        op_sel.name = prop_name
+
+def draw_io_section(self, L, ctx):
+    p = ctx.scene.ik_motion_props
+    box = L.box()
+    row = box.row()
+    icon = 'TRIA_DOWN' if getattr(p, "show_io", True) else 'TRIA_RIGHT'
+    row.prop(p, "show_io", icon=icon, text="📂 Import / Export", emboss=False)
+
+    if not p.show_io:
+        return
+
+    grid = box.grid_flow(columns=4, align=True)
+
+    stage_label_map = {
+        0: "EV_Z",
+        1: "EV_Y",
+        2: "Stage_X",
+        3: "Stage_Y",
+        4: "Stage_Z",
+        5: "Holder_tilt",
+        6: "Holder_rot"
+    }
+
+    box.label(text="Joint Graph Export")
+    for i in range(7):
+        grid.prop(p, 'show_plot_joints', index=i, text=f"j{i+1}")
+    for i in range(7):
+        label = stage_label_map.get(i, f"stage_{i}")
+        grid.prop(p, 'show_plot_joints', index=7+i, text=label)
+
+    box.operator("object.export_joint_graph_csv", text="Export Joint CSV", icon='EXPORT')
+    box.operator("object.export_teach_data", text="Export Teach Data (.json)", icon='EXPORT')
+
+classes = [
+    UI_UL_tcp_list,
+    VIEW3D_PT_ur_ik,
+]
