@@ -10,7 +10,7 @@ from .robot_state import get_active_robot, set_active_robot
 from .core import (
     solve_and_apply, apply_solution, get_inverse_kinematics, compute_base_matrix, 
     compute_tcp_offset_matrix, get_forward_kinematics, 
-    sort_solutions, get_BONES, get_best_ik_solution,
+    sort_solutions, get_BONES, get_AXES, get_best_ik_solution,
 )
 from .core_iiwa import linear_move
 from pathlib import Path
@@ -397,6 +397,103 @@ class OBJECT_OT_export_teach_data(bpy.types.Operator):
         self.report({'INFO'}, f"Exported {len(data)} TCPs → {path.name}")
         return {'FINISHED'}
 
+import csv
+from math import degrees
+
+class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
+    bl_idname = "object.export_joint_graph_csv"
+    bl_label = "Export Joint Graph CSV"
+
+    def execute(self, ctx):
+        p = ctx.scene.ik_motion_props
+        jog = ctx.scene.jog_props
+        arm = bpy.data.objects.get(p.armature)
+        goal = p.goal_object
+
+        if not arm:
+            self.report({'ERROR'}, "No armature found")
+            return {'CANCELLED'}
+
+        bones = get_BONES()
+        axes  = get_AXES()
+        n_bones = len(bones)
+        n_stage = 7
+
+        frame_start = ctx.scene.frame_start
+        frame_end   = ctx.scene.frame_end
+        frames = list(range(frame_start, frame_end + 1))
+
+        data = []
+        headers = ["frame"]
+
+        label_map = {
+            "joint_ev_z": "EV_Z",
+            "joint_ev_y": "EV_Y",
+            "joint_stage_x": "Stage_X",
+            "joint_stage_y": "Stage_Y",
+            "joint_stage_z": "Stage_Z",
+            "joint_holder_tilt": "Holder_tilt",
+            "joint_holder_rot": "Holder_rot"
+        }
+
+        for i in range(n_bones):
+            if p.show_plot_joints[i]:
+                headers.append(f"j{i+1}")
+        for i in range(n_stage):
+            if p.show_plot_joints[i + n_bones]:
+                obj_name = [
+                    "joint_ev_z", "joint_ev_y", "joint_stage_x",
+                    "joint_stage_y", "joint_stage_z",
+                    "joint_holder_tilt", "joint_holder_rot"
+                ][i]
+                headers.append(label_map.get(obj_name, obj_name))
+
+        stage_objects = [
+            ("joint_ev_z",       "location",        2, False),
+            ("joint_ev_y",       "location",        1, False),
+            ("joint_stage_x",    "location",        0, False),
+            ("joint_stage_y",    "location",        1, True),
+            ("joint_stage_z",    "location",        2, True),
+            ("joint_holder_tilt","rotation_euler",  0, True),
+            ("joint_holder_rot", "rotation_euler",  2, True),
+        ]
+
+        for f in frames:
+            ctx.scene.frame_set(f)
+            row = [f]
+
+            # ▶ KUKA (j1~j7)
+            for i in range(n_bones):
+                if p.show_plot_joints[i]:
+                    pb = arm.pose.bones.get(bones[i])
+                    axis = axes[i]
+                    angle_rad = getattr(pb.rotation_euler, axis)
+                    row.append(round(degrees(angle_rad), 3))
+
+            # ▶ Stage
+            for i, (obj_name, attr, index, is_angle) in enumerate(stage_objects):
+                if p.show_plot_joints[i + n_bones]:
+                    try:
+                        obj = bpy.data.objects.get(obj_name)
+                        if obj is None:
+                            row.append(None)
+                            continue
+                        val = getattr(obj, attr)[index]
+                        row.append(round(degrees(val), 3) if is_angle else round(val * 1000, 3))
+                    except Exception:
+                        row.append(None)
+
+            data.append(row)
+
+        path = bpy.path.abspath("//joint_plot_export.csv")
+        with open(path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            writer.writerows(data)
+
+        self.report({'INFO'}, f"CSV exported: {path}")
+        return {'FINISHED'}
+	    
 # ──────────────────────────────────────────────────────────────   
 classes = (
     OBJECT_OT_clear_path_visuals,
@@ -410,4 +507,5 @@ classes = (
     OBJECT_OT_sync_robot_type,
     OBJECT_OT_focus_on_target,
     OBJECT_OT_export_teach_data,
+    OBJECT_OT_export_joint_graph_csv,
 )
