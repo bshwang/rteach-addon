@@ -221,14 +221,9 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         soft_max=10.0
     )
 
-    robot_type: bpy.props.EnumProperty(
+    robot_type: bpy.props.StringProperty(
         name="Robot",
-        items=[
-            ('KUKA', 'KUKA LBR iiwa 14 R820', ''),
-            ('UR16e', 'UR16e', ''),
-            ('UR5e',  'UR5e', '')
-        ],
-        default='KUKA'
+        default=""
     )
 
     path_percent: bpy.props.FloatProperty(
