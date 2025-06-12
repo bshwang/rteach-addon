@@ -7,6 +7,85 @@ from .core import get_BONES, get_AXES, get_joint_limits
 
 MAX_JOINTS = 8  # iiwa 7+base, UR 6+base
 
+class StageJogProperties(bpy.types.PropertyGroup):
+
+    joint_ev_z: bpy.props.FloatProperty(
+        name="joint_ev_z",
+        subtype='DISTANCE',
+        unit='LENGTH',
+        min=-0.58, max=0.22,
+        get=lambda self: bpy.data.objects["joint_ev_z"].location[2]
+        if "joint_ev_z" in bpy.data.objects else 0.0,
+        set=lambda self, v: setattr(bpy.data.objects["joint_ev_z"].location, "z", v)
+        if "joint_ev_z" in bpy.data.objects else None
+    )
+
+    joint_ev_y: bpy.props.FloatProperty(
+        name="joint_ev_y",
+        subtype='DISTANCE',
+        unit='LENGTH',
+        min=-0.4, max=0.0,
+        get=lambda self: bpy.data.objects["joint_ev_y"].location[1]
+        if "joint_ev_y" in bpy.data.objects else 0.0,
+        set=lambda self, v: setattr(bpy.data.objects["joint_ev_y"].location, "y", v)
+        if "joint_ev_y" in bpy.data.objects else None
+    )
+
+    joint_stage_x: bpy.props.FloatProperty(
+        name="joint_stage_x",
+        subtype='DISTANCE',
+        unit='LENGTH',
+        min=0.0, max=0.4,
+        get=lambda self: bpy.data.objects["joint_stage_x"].location[0]
+        if "joint_stage_x" in bpy.data.objects else 0.0,
+        set=lambda self, v: setattr(bpy.data.objects["joint_stage_x"].location, "x", v)
+        if "joint_stage_x" in bpy.data.objects else None
+    )
+
+    joint_stage_y: bpy.props.FloatProperty(
+        name="joint_stage_y",
+        subtype='DISTANCE',
+        unit='LENGTH',
+        min=-0.12, max=0.28,
+        get=lambda self: bpy.data.objects["joint_stage_y"].location[1]
+        if "joint_stage_y" in bpy.data.objects else 0.0,
+        set=lambda self, v: setattr(bpy.data.objects["joint_stage_y"].location, "y", v)
+        if "joint_stage_y" in bpy.data.objects else None
+    )
+
+    joint_stage_z: bpy.props.FloatProperty(
+        name="joint_stage_z",
+        subtype='DISTANCE',
+        unit='LENGTH',
+        min=-0.25, max=0.55,
+        get=lambda self: bpy.data.objects["joint_stage_z"].location[2]
+        if "joint_stage_z" in bpy.data.objects else 0.0,
+        set=lambda self, v: setattr(bpy.data.objects["joint_stage_z"].location, "z", v)
+        if "joint_stage_z" in bpy.data.objects else None
+    )
+
+    joint_holder_tilt: bpy.props.FloatProperty(
+        name="joint_holder_tilt",
+        subtype='ANGLE',
+        unit='ROTATION',
+        min=0.0, max=0.6109,
+        get=lambda self: bpy.data.objects["joint_holder_tilt"].rotation_euler[0]
+        if "joint_holder_tilt" in bpy.data.objects else 0.0,
+        set=lambda self, v: setattr(bpy.data.objects["joint_holder_tilt"].rotation_euler, "x", v)
+        if "joint_holder_tilt" in bpy.data.objects else None
+    )
+
+    joint_holder_rot: bpy.props.FloatProperty(
+        name="joint_holder_rot",
+        subtype='ANGLE',
+        unit='ROTATION',
+        min=0.0, max=2.3562,
+        get=lambda self: bpy.data.objects["joint_holder_rot"].rotation_euler[2]
+        if "joint_holder_rot" in bpy.data.objects else 0.0,
+        set=lambda self, v: setattr(bpy.data.objects["joint_holder_rot"].rotation_euler, "z", v)
+        if "joint_holder_rot" in bpy.data.objects else None
+    )
+
 class TcpItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="TCP Name")
 
@@ -73,6 +152,7 @@ def in_collections(collection_names):
 class IKMotionProperties(bpy.types.PropertyGroup):
     tcp_sorted_list: bpy.props.CollectionProperty(type=TcpItem)
     tcp_list_index: bpy.props.IntProperty(name="Selected TCP Index", default=0)
+    stage_props: bpy.props.PointerProperty(type=StageJogProperties)
 
     selected_teach_point: bpy.props.PointerProperty(
         name="Teach Point",
@@ -113,7 +193,20 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         name="Show Jog Mode",
         default=False,
     )
-
+    
+    show_plot_joints: bpy.props.BoolVectorProperty(
+        name="Plot Joints",
+        description="Select joints to export",
+        size=14,  # j1~j7 + stage_0~stage_6
+        default=(True,) * 14
+    )
+    show_io: bpy.props.BoolProperty(name="Show Import/Export", default=True)
+    
+    show_stage: bpy.props.BoolProperty(
+        name="Show Stage Jog",
+        default=True
+    )
+    
     motion_speed: bpy.props.FloatProperty(
         name="Speed (mm/s)",
         default=100.0,
