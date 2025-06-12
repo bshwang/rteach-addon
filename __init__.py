@@ -24,8 +24,8 @@ from .core import *
 from .ops_teach_main import classes as main_classes
 from .ops_teach_util import classes as util_classes
 from .ui_panel import classes as ui_classes
-from .settings import IKMotionProperties, JogProperties, TcpItem
-
+from .settings import IKMotionProperties, JogProperties, TcpItem, StageJogProperties
+ 
 # Define EnumProperty immediately on import (before class registration)
 if not hasattr(bpy.types.Object, "motion_enum"):
     bpy.types.Object.motion_enum = EnumProperty(
@@ -40,6 +40,7 @@ if not hasattr(bpy.types.Object, "motion_enum"):
     
 classes = (
     TcpItem,
+    StageJogProperties,
     IKMotionProperties,
     JogProperties,
     *main_classes,
