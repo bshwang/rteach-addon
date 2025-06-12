@@ -60,7 +60,7 @@ class OBJECT_OT_teach_pose(bpy.types.Operator):
 
         if success:
             if p.auto_record:
-                bpy.ops.object.record_goal_as_empty()
+                bpy.ops.object.record_tcp_point()
             p.status_text = f"Applied 1/{len(sols)}"
         else:
             p.status_text = "IK failed"
@@ -451,7 +451,7 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
                 p.linear_frames = span
 
                 ctx.scene.frame_set(f + 1)
-                bpy.ops.object.move_l_ik('EXEC_DEFAULT')
+                bpy.ops.object.execute_linear_motion('EXEC_DEFAULT')
                 f += span
 
             elif motion == "JOINT":
@@ -581,16 +581,16 @@ def preview_obj_pose(ctx, obj, forward: bool):
         if obj != p.selected_teach_point:
             p.selected_teach_point = obj
 
-        if len(obj["joint_pose"]) >= 3:
-            p.fixed_q3 = obj["joint_pose"][2]
-            idx = int(obj.get("solution_index", 0))
-            p.solution_index_ui = idx + 1
-            p.current_index = idx
+        if len(obj["joint_pose"]) >= 3:
+            p.fixed_q3 = obj.get("fixed_q3", obj["joint_pose"][2])
+            idx = int(obj.get("solution_index", 0))
+            p.solution_index_ui = idx + 1
+            p.current_index = idx
+            p.fixed_q3_deg = p.fixed_q3
 
         p.status_text = f"Preview {obj.name} (stored)"
         return {'FINISHED'}
 
-    # IK 새로 계산
     T_goal = np.array(obj.matrix_world)
     q_sel, sols = get_best_ik_solution(p, T_goal)
     if not sols:
@@ -827,8 +827,15 @@ class OBJECT_OT_tcp_list_select(bpy.types.Operator):
         tgt.matrix_world = obj.matrix_world.copy()
         tgt.scale = (1, 1, 1)
 
-        if "joint_pose" in obj:
-            apply_solution(arm, obj["joint_pose"], ctx.scene.frame_current, insert_keyframe=False)
+        if "joint_pose" in obj:
+            apply_solution(arm, obj["joint_pose"], ctx.scene.frame_current, insert_keyframe=False)
+
+            if len(obj["joint_pose"]) >= 3:
+                p.fixed_q3 = obj.get("fixed_q3", obj["joint_pose"][2])
+                p.fixed_q3_deg = p.fixed_q3
+
+            p.current_index     = int(obj.get("solution_index", 0))
+            p.solution_index_ui = p.current_index + 1
 
         p.status_text = f"Snapped and previewed {obj.name}"
         return {'FINISHED'}
@@ -893,7 +900,103 @@ class OBJECT_OT_record_tcp_from_jog(bpy.types.Operator):
         bpy.ops.object.record_tcp_point('INVOKE_DEFAULT')
         p.status_text = "TCP recorded from Jog values"
         return {'FINISHED'}
-        
+
+# ──────────────────────────────────────────────────────────────   
+class OBJECT_OT_recompute_selected_tcp(bpy.types.Operator):
+    bl_idname = "object.recompute_selected_tcp"
+    bl_label = "Update IK from Location"
+    bl_description = "Recompute joint_pose/fixed_q3 for selected TCPs based on current transform"
+
+    def execute(self, ctx):
+        import numpy as np
+        from .core import get_best_ik_solution, apply_solution
+        from .robot_state import get_active_robot
+
+        p = ctx.scene.ik_motion_props
+        arm = bpy.data.objects.get(p.armature)
+        if not arm:
+            self.report({'ERROR'}, "Armature not found")
+            return {'CANCELLED'}
+
+        count = 0
+        for obj in ctx.selected_objects:
+            if not obj.name.startswith("P."):
+                continue
+
+            T_goal = np.array(obj.matrix_world)
+            q_sel, sols = get_best_ik_solution(p, T_goal)
+            if not sols:
+                self.report({'WARNING'}, f"IK failed: {obj.name}")
+                continue
+
+            obj["joint_pose"] = q_sel.tolist()
+            obj["solution_index"] = sols.index(q_sel) if q_sel in sols else 0
+
+            if get_active_robot() == "KUKA":
+                obj["fixed_q3"] = q_sel[2]
+
+            count += 1
+
+        self.report({'INFO'}, f"Updated {count} TCPs from current position")
+        return {'FINISHED'}
+# ──────────────────────────────────────────────────────────────    
+
+class OBJECT_OT_keyframe_stage_joint(bpy.types.Operator):
+    bl_idname = "object.keyframe_stage_joint"
+    bl_label = "Insert Stage Keyframe"
+
+    name: bpy.props.StringProperty()  # e.g., "joint_y"
+
+    def execute(self, ctx):
+        p = ctx.scene.ik_motion_props
+        props = p.stage_props
+        value = getattr(props, self.name, None)
+        obj = bpy.data.objects.get(self.name)
+
+        if obj is None:
+            self.report({'ERROR'}, f"Object '{self.name}' not found")
+            return {'CANCELLED'}
+
+        axis = obj.get("axis", "X").upper()
+        frame = ctx.scene.frame_current
+
+        if axis in {"X", "Y", "Z"}:
+            idx = "XYZ".index(axis)
+            obj.location[idx] = value
+            obj.keyframe_insert(data_path="location", frame=frame, index=idx)
+
+        elif axis in {"RX", "RY", "RZ"}:
+            idx = "XYZ".index(axis[-1])
+            obj.rotation_mode = 'XYZ'
+            obj.rotation_euler[idx] = value
+            obj.keyframe_insert(data_path="rotation_euler", frame=frame, index=idx)
+
+        self.report({'INFO'}, f"Keyframed {self.name} at frame {frame}")
+        return {'FINISHED'}
+
+# ──────────────────────────────────────────────────────────────    
+
+class OBJECT_OT_focus_stage_joint(bpy.types.Operator):
+    bl_idname = "object.focus_stage_joint"
+    bl_label = "Select Joint in Viewport"
+
+    name: bpy.props.StringProperty()
+
+    def execute(self, ctx):
+        obj = bpy.data.objects.get(self.name)
+        if not obj:
+            self.report({'ERROR'}, f"Object '{self.name}' not found")
+            return {'CANCELLED'}
+
+        for o in ctx.selected_objects:
+            o.select_set(False)
+
+        obj.select_set(True)
+        ctx.view_layer.objects.active = obj
+
+        self.report({'INFO'}, f"Selected {obj.name}")
+        return {'FINISHED'}
+
 # ──────────────────────────────────────────────────────────────    
 classes = (
     OBJECT_OT_teach_pose,
@@ -912,5 +1015,8 @@ classes = (
     OBJECT_OT_apply_global_speed,
     OBJECT_OT_tcp_list_select,
     OBJECT_OT_keyframe_joint_pose,
-    OBJECT_OT_record_tcp_from_jog,    
+    OBJECT_OT_record_tcp_from_jog,
+    OBJECT_OT_recompute_selected_tcp,
+    OBJECT_OT_keyframe_stage_joint,
+    OBJECT_OT_focus_stage_joint, 
 )
