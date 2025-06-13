@@ -14,7 +14,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
     bl_idname = "VIEW3D_PT_ur_ik"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'IK Solver'
+    bl_category = 'Robot Sim'
 
     def draw(self, ctx):
         L = self.layout
@@ -29,12 +29,14 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         self.draw_step2(L, ctx)
         self.draw_step3(L, ctx)
         self.draw_io_section(L, ctx)
-
+    
     def draw_robot_selector(self, L, ctx):
         p = ctx.scene.ik_motion_props
         row = L.row(align=True)
         row.prop(p, "robot_type", text="")
-        row.operator("object.sync_robot_type", text="Sync", icon='FILE_REFRESH')
+        row.operator("object.sync_robot_type", text="", icon='FILE_REFRESH')
+        row.operator("object.import_robot_system", text="", icon='APPEND_BLEND')
+        row.operator("object.clear_robot_system", text="", icon='TRASH')
 
     def draw_setup_section(self, L, ctx):
         p = ctx.scene.ik_motion_props
@@ -144,7 +146,6 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row = box.row(align=True)
         row.operator("object.tcp_move_up", text="", icon='TRIA_UP')
         row.operator("object.tcp_move_down", text="", icon='TRIA_DOWN')
-        row.operator("object.tcp_move_down", text="", icon='TRIA_DOWN')
         
         if p.selected_teach_point:
             op = row.operator("object.tcp_delete", text="", icon='X')
@@ -218,35 +219,24 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.scale_x = 1.1
             row.label(text="High Precision Linear Mode")
             row.prop(p, "precise_linear", text="", icon='CONSTRAINT', toggle=True)
+            
+    def draw_stage_jog_section(self, layout, ctx):
+        box = layout.box()
+        box.label(text="Stage Jog Mode", icon='TOOL_SETTINGS')
 
-def draw_stage_jog_section(self, L, ctx):
-    from .settings import StageJogProperties
-    p = ctx.scene.ik_motion_props
-    jog_props = p.stage_props
+        stage_data = getattr(ctx.scene, "stage_props", None)
+        if not stage_data or not hasattr(stage_data, "joints"):
+            box.label(text="No stage joints defined.")
+            return
 
-    box = L.box()
-    row = box.row()
-    icon = 'TRIA_DOWN' if p.show_stage else 'TRIA_RIGHT'
-    row.prop(p, "show_stage", icon=icon, text="Stage Jog Mode", emboss=False)
+        if not stage_data.joints:
+            box.label(text="No stage sliders available.")
+            return
 
-    if not p.show_stage:
-        return
-
-    box.operator("object.refresh_stage_jog", text="Refresh", icon='FILE_REFRESH')
-
-    if not jog_props or not StageJogProperties.__annotations__:
-        box.label(text="No stage jog sliders found", icon='INFO')
-        return
-
-    for prop_name in StageJogProperties.__annotations__.keys():
-        row = box.row(align=True)
-        row.label(text=prop_name)
-        row.prop(jog_props, prop_name, text="", slider=True)
-        op_kf = row.operator("object.keyframe_stage_joint", text="", icon='KEY_HLT')
-        op_kf.name = prop_name
-        op_sel = row.operator("object.focus_stage_joint", text="", icon='RESTRICT_SELECT_OFF')
-        op_sel.name = prop_name
-
+        for joint in stage_data.joints:
+            row = box.row(align=True)
+            row.prop(joint, "value", text=joint.name, slider=True)
+            
 def draw_io_section(self, L, ctx):
     p = ctx.scene.ik_motion_props
     box = L.box()
