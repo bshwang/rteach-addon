@@ -3,7 +3,7 @@
 bl_info = {
     "name": "Robot Simulator for Blender",
     "author": "Beomsoo Hwang",
-    "version": (1, 0),
+    "version": (1, 0, 3),
     "blender": (4, 3, 0),
     "location": "View3D > Sidebar > IK Solver",
     "description": "UR/KUKA robot motion teaching add-on",
@@ -24,9 +24,11 @@ from .core import *
 from .ops_teach_main import classes as main_classes
 from .ops_teach_util import classes as util_classes
 from .ui_panel import classes as ui_classes
-from .settings import IKMotionProperties, JogProperties, TcpItem, StageJogProperties
- 
-# Define EnumProperty immediately on import (before class registration)
+
+from .settings import IKMotionProperties, JogProperties, TcpItem, re_register_stage_properties
+from .settings import StageJogProperties, StageJointItem
+from .ops_import_system import OBJECT_OT_import_robot_system, update_jog_properties
+
 if not hasattr(bpy.types.Object, "motion_enum"):
     bpy.types.Object.motion_enum = EnumProperty(
         name="Motion Type",
@@ -40,9 +42,11 @@ if not hasattr(bpy.types.Object, "motion_enum"):
     
 classes = (
     TcpItem,
-    StageJogProperties,
+    StageJointItem, 
+    StageJogProperties, 
     IKMotionProperties,
     JogProperties,
+    OBJECT_OT_import_robot_system,
     *main_classes,
     *util_classes,
     *ui_classes, 
@@ -51,9 +55,33 @@ classes = (
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.Scene.ik_motion_props = bpy.props.PointerProperty(type=IKMotionProperties)
-    bpy.types.Scene.jog_props       = bpy.props.PointerProperty(type=JogProperties)
 
+    bpy.types.Scene.ik_motion_props = bpy.props.PointerProperty(type=IKMotionProperties)
+    bpy.types.Scene.jog_props = bpy.props.PointerProperty(type=JogProperties)
+    bpy.types.Scene.stage_props = bpy.props.PointerProperty(type=StageJogProperties)
+
+    from .settings import (
+        re_register_stage_properties,
+        register_stage_properties
+    )
+    from .ops_import_system import update_jog_properties
+
+    update_jog_properties()
+    register_stage_properties({
+        "stage_joints": [
+            {
+                "name": "placeholder_stage",
+                "label": "Placeholder",
+                "type": "location",
+                "axis": "x",
+                "min": 0,
+                "max": 1,
+                "unit": "mm"
+            }
+        ]
+    })
+    re_register_stage_properties()
+    
 def unregister():
     for cls in reversed(classes):
         try:
