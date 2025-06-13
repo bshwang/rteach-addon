@@ -1,4 +1,4 @@
-# core_ur.py
+import bpy
 
 from .robot_state import get_active_robot
 from ur_analytic_ik_ext import ur16e, ur5e
@@ -8,12 +8,15 @@ ARMATURE_BONES = ["j1", "j2", "j3", "j4", "j5", "j6"]
 AXES = ['z', 'x', 'x', 'z', 'x', 'z']
 
 def _get_solver():
-    if get_active_robot() == "UR16e":
-        return ur16e
-    elif get_active_robot() == "UR5e":
+    robot = get_active_robot()
+    if robot == "UR5E":
+        print("[DEBUG] Using UR5E solver")
         return ur5e
+    elif robot == "UR16E":
+        print("[DEBUG] Using UR16E solver")
+        return ur16e
     else:
-        raise ValueError(f"Unknown UR robot: {ACTIVE_ROBOT}")
+        raise ValueError(f"[core_ur] Unknown UR variant: '{robot}'")
 
 def inverse_kinematics(T):
     return _get_solver().inverse_kinematics(T)
