@@ -1,7 +1,7 @@
 {
   "ur5e": {
     "blend": "ur5e.blend",
-    "robot_type": "UR",
+    "robot_type": "UR5E",
     "armatures": ["UR5e_Arm"],
     "axes": ["z", "x", "x", "z", "x", "z"],
     "joint_limits_deg": [[-360, 360], [-360, 360], [-360, 360], [-360, 360], [-360, 360], [-360, 360]],
@@ -15,7 +15,7 @@
   },
   "ur16e": {
     "blend": "ur16e.blend",
-    "robot_type": "UR",
+    "robot_type": "UR16E",
     "armatures": ["UR16e_Arm"],
     "axes": ["z", "x", "x", "z", "x", "z"],
     "joint_limits_deg": [[-360, 360], [-360, 360], [-360, 360], [-360, 360], [-360, 360], [-360, 360]],
