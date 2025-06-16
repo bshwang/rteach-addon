@@ -195,10 +195,8 @@ def re_register_jog_properties():
     bpy.app.timers.register(delayed_update_jog_props, first_interval=0.1)
 
 def register_stage_properties(preset):
-   def register_stage_properties(preset):
     from bpy.utils import unregister_class, register_class
 
-    # 안전 해제
     try:
         unregister_class(StageJogProperties)
     except Exception as e:
@@ -207,7 +205,6 @@ def register_stage_properties(preset):
     if hasattr(bpy.types.Scene, "stage_props"):
         del bpy.types.Scene.stage_props
 
-    # 새 annotation 구성
     StageJogProperties.__annotations__ = {}
     items = preset.get("stage_joints", [])
     for item in items:
@@ -239,7 +236,6 @@ def register_stage_properties(preset):
             set=setter
         )
 
-    # 재등록
     try:
         register_class(StageJogProperties)
     except Exception as e:
