@@ -25,9 +25,11 @@ from .ops_teach_main import classes as main_classes
 from .ops_teach_util import classes as util_classes
 from .ui_panel import classes as ui_classes
 
-from .settings import IKMotionProperties, JogProperties, TcpItem, re_register_stage_properties
-from .settings import StageJogProperties, StageJointItem
+from .settings import IKMotionProperties, JogProperties, TcpItem, StageJogProperties
+from .settings import register_stage_properties, re_register_stage_properties
 from .ops_import_system import OBJECT_OT_import_robot_system, update_jog_properties
+from . import ui_pie
+from . import ui_overlay
 
 if not hasattr(bpy.types.Object, "motion_enum"):
     bpy.types.Object.motion_enum = EnumProperty(
@@ -42,7 +44,6 @@ if not hasattr(bpy.types.Object, "motion_enum"):
     
 classes = (
     TcpItem,
-    StageJointItem, 
     StageJogProperties, 
     IKMotionProperties,
     JogProperties,
