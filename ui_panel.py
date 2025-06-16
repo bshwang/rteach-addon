@@ -1,3 +1,4 @@
+# ui_panel.py 
 import bpy
 from .settings import IKMotionProperties, JogProperties, StageJogProperties
 from .robot_state import get_active_robot
@@ -29,7 +30,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         self.draw_step2(L, ctx)
         self.draw_step3(L, ctx)
         self.draw_io_section(L, ctx)
-    
+
     def draw_robot_selector(self, L, ctx):
         p = ctx.scene.ik_motion_props
         row = L.row(align=True)
@@ -67,9 +68,11 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             col.prop(p.goal_object, 'rotation_euler', index=2, text="RZ")
             box.operator("object.focus_on_target", text="Select Target", icon='RESTRICT_SELECT_OFF')
             box.operator("object.snap_goal_to_active", text="Snap Target to Selected", icon='PIVOT_ACTIVE')
-
+            box.operator("object.snap_target_to_fk", text="Snap Target to FK", icon='CONSTRAINT')
+            box.operator("object.setup_tcp_from_gizmo", text="Create TCP from Gizmo", icon='EMPTY_ARROWS')
+            
     def draw_jog_section(self, L, ctx):
-        from .core import get_armature_bones, get_joint_limits
+
         p = ctx.scene.ik_motion_props
         box = L.box()
         row = box.row()
@@ -81,6 +84,17 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         jog = ctx.scene.jog_props
         bones = get_armature_bones()
         limits = get_joint_limits()
+        
+        expected_dof = len(bones)
+        actual_props = [k for k in dir(jog) if k.startswith("joint_")]
+        if len(actual_props) < expected_dof:
+            box.label(text="⚠️ Jog sliders not fully registered yet", icon='ERROR')
+            return
+
+        if not hasattr(jog, "joint_0"):
+            box.label(text="⚠️ No robot system loaded", icon='ERROR')
+            return
+
         for i, bn in enumerate(bones):
             row = box.row(align=True)
             min_deg, max_deg = limits[i]
@@ -95,6 +109,9 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row = box.row(align=True)
         row.operator("object.keyframe_joint_pose", text="Keyframe Pose", icon='KEY_HLT')
         row.operator("object.record_tcp_from_jog", text="Record as TCP", icon='EMPTY_AXIS')
+
+        row = box.row(align=True)
+        row.operator("object.go_home_pose", text="Go Home", icon='HOME')
 
     def draw_step1(self, L, ctx):
         p = ctx.scene.ik_motion_props
@@ -146,14 +163,16 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row = box.row(align=True)
         row.operator("object.tcp_move_up", text="", icon='TRIA_UP')
         row.operator("object.tcp_move_down", text="", icon='TRIA_DOWN')
-        
+
         if p.selected_teach_point:
             op = row.operator("object.tcp_delete", text="", icon='X')
             op.name = p.selected_teach_point.name
         else:
-            row.operator("object.tcp_delete", text="", icon='X')
+            row.operator("object.tcp_delete", text="", icon='X') 
+
         row.operator("object.update_tcp_pose", text="Pose Update", icon='EXPORT')
         row.operator("object.recompute_selected_tcp", text="Recompute", icon='CON_ROTLIKE')
+
 
         row = box.row(align=True)
         row.prop(p, "selected_teach_point", text="Selected")
@@ -221,53 +240,59 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.prop(p, "precise_linear", text="", icon='CONSTRAINT', toggle=True)
             
     def draw_stage_jog_section(self, layout, ctx):
+        p = ctx.scene.ik_motion_props
+        props = ctx.scene.stage_props
         box = layout.box()
-        box.label(text="Stage Jog Mode", icon='TOOL_SETTINGS')
+        row = box.row()
+        icon = 'TRIA_DOWN' if p.show_stage else 'TRIA_RIGHT'
+        row.prop(p, "show_stage", icon=icon, text="Stage Jog Mode", emboss=False)
 
-        stage_data = getattr(ctx.scene, "stage_props", None)
-        if not stage_data or not hasattr(stage_data, "joints"):
-            box.label(text="No stage joints defined.")
+        if not p.show_stage:
             return
 
-        if not stage_data.joints:
-            box.label(text="No stage sliders available.")
+        if not props:
+            box.label(text="No stage properties")
             return
 
-        for joint in stage_data.joints:
+        for key in props.__annotations__.keys():
             row = box.row(align=True)
-            row.prop(joint, "value", text=joint.name, slider=True)
-            
-def draw_io_section(self, L, ctx):
-    p = ctx.scene.ik_motion_props
-    box = L.box()
-    row = box.row()
-    icon = 'TRIA_DOWN' if getattr(p, "show_io", True) else 'TRIA_RIGHT'
-    row.prop(p, "show_io", icon=icon, text="📂 Import / Export", emboss=False)
+            col = row.column(align=True)
+            col.prop(props, key, text=props.bl_rna.properties[key].name, slider=True)
 
-    if not p.show_io:
-        return
+            op = row.operator("object.focus_stage_joint", text="", emboss=True, icon='RESTRICT_SELECT_OFF')
+            op.name = key  # key = object name
 
-    grid = box.grid_flow(columns=4, align=True)
+    def draw_io_section(self, L, ctx):
+        p = ctx.scene.ik_motion_props
+        box = L.box()
+        row = box.row()
+        icon = 'TRIA_DOWN' if getattr(p, "show_io", True) else 'TRIA_RIGHT'
+        row.prop(p, "show_io", icon=icon, text="📂 Import / Export", emboss=False)
 
-    stage_label_map = {
-        0: "EV_Z",
-        1: "EV_Y",
-        2: "Stage_X",
-        3: "Stage_Y",
-        4: "Stage_Z",
-        5: "Holder_tilt",
-        6: "Holder_rot"
-    }
+        if not p.show_io:
+            return
 
-    box.label(text="Joint Graph Export")
-    for i in range(7):
-        grid.prop(p, 'show_plot_joints', index=i, text=f"j{i+1}")
-    for i in range(7):
-        label = stage_label_map.get(i, f"stage_{i}")
-        grid.prop(p, 'show_plot_joints', index=7+i, text=label)
+        grid = box.grid_flow(columns=4, align=True)
 
-    box.operator("object.export_joint_graph_csv", text="Export Joint CSV", icon='EXPORT')
-    box.operator("object.export_teach_data", text="Export Teach Data (.json)", icon='EXPORT')
+        stage_label_map = {
+            0: "EV_Z",
+            1: "EV_Y",
+            2: "Stage_X",
+            3: "Stage_Y",
+            4: "Stage_Z",
+            5: "Holder_tilt",
+            6: "Holder_rot"
+        }
+
+        box.label(text="Joint Graph Export")
+        for i in range(7):
+            grid.prop(p, 'show_plot_joints', index=i, text=f"j{i+1}")
+        for i in range(7):
+            label = stage_label_map.get(i, f"stage_{i}")
+            grid.prop(p, 'show_plot_joints', index=7+i, text=label)
+
+        box.operator("object.export_joint_graph_csv", text="Export Joint CSV", icon='EXPORT')
+        box.operator("object.export_teach_data", text="Export Teach Data (.json)", icon='EXPORT')
 
 classes = [
     UI_UL_tcp_list,
