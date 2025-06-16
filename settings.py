@@ -195,25 +195,36 @@ def re_register_jog_properties():
     bpy.app.timers.register(delayed_update_jog_props, first_interval=0.1)
 
 def register_stage_properties(preset):
+   def register_stage_properties(preset):
+    from bpy.utils import unregister_class, register_class
+
+    # 안전 해제
+    try:
+        unregister_class(StageJogProperties)
+    except Exception as e:
+        print(f"[DEBUG] StageJogProperties unregister failed: {e}")
+
+    if hasattr(bpy.types.Scene, "stage_props"):
+        del bpy.types.Scene.stage_props
+
+    # 새 annotation 구성
+    StageJogProperties.__annotations__ = {}
     items = preset.get("stage_joints", [])
-    StageJogProperties.__annotations__.clear()
-
     for item in items:
-        label = item["label"]
         obj_name = item["name"]
-        axis = item.get("axis", "z")
-        unit = item.get("unit", "mm").lower()
+        label    = item.get("label", obj_name)
+        axis     = item.get("axis", "z")
+        unit     = item.get("unit", "mm").lower()
         joint_type = item.get("type", "location").lower()
-
-        min_val = item.get("min", -1000)
-        max_val = item.get("max", 1000)
+        min_val  = item.get("min", -1000)
+        max_val  = item.get("max", 1000)
 
         if unit == "deg":
             min_val = math.radians(min_val)
             max_val = math.radians(max_val)
         elif unit == "mm":
-            min_val = min_val / 1000.0
-            max_val = max_val / 1000.0
+            min_val /= 1000.0
+            max_val /= 1000.0
 
         getter = create_stage_getter(obj_name, axis=axis, unit=unit, joint_type=joint_type)
         setter = create_stage_setter(obj_name, axis=axis, unit=unit, joint_type=joint_type)
@@ -227,6 +238,16 @@ def register_stage_properties(preset):
             get=getter,
             set=setter
         )
+
+    # 재등록
+    try:
+        register_class(StageJogProperties)
+    except Exception as e:
+        print(f"[ERROR] StageJogProperties re-registration failed: {e}")
+        return
+
+    bpy.types.Scene.stage_props = bpy.props.PointerProperty(type=StageJogProperties)
+    print("[DEBUG] StageJogProperties re-registered")
         
 def re_register_stage_properties():
     
