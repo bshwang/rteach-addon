@@ -4,7 +4,7 @@ import json
 import math
 from bpy.props import EnumProperty
 from .settings import StageJogProperties, JogProperties, create_getter, create_setter
-from .settings import register_stage_properties, re_register_stage_properties, re_register_jog_properties
+from .settings import register_stage_properties, re_register_jog_properties
 from .robot_state import get_active_robot
 from .core import get_AXES, get_joint_limits
 
@@ -21,7 +21,7 @@ def get_robot_enum_items():
     except Exception as e:
         print(f"[ERROR] Failed to load robot presets: {e}")
         return []
-        
+
 def update_jog_properties():
     from .core import get_joint_limits, get_AXES, get_BONES
     from .settings import create_getter, create_setter
@@ -33,11 +33,12 @@ def update_jog_properties():
     bones = get_BONES()
 
     print(f"[DEBUG] DOF={len(limits)}, bones={bones}, axes={axes}")
-    
+
     for i in range(len(limits)):
         deg_min, deg_max = limits[i]
         min_r = math.radians(deg_min)
         max_r = math.radians(deg_max)
+
         JogProperties.__annotations__[f"joint_{i}"] = bpy.props.FloatProperty(
             name=f"Joint {i}",
             subtype='ANGLE',
@@ -47,9 +48,8 @@ def update_jog_properties():
             get=create_getter(i),
             set=create_setter(i),
         )
-
-def move_objects_to_collection(objects, collection_name):
-    scene = bpy.context.scene
+        
+    bpy.context.area.tag_redraw()
 
 class OBJECT_OT_import_robot_system(bpy.types.Operator):
     bl_idname = "object.import_robot_system"
@@ -87,6 +87,9 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
         p = ctx.scene.ik_motion_props
         robot_type_raw = entry.get("robot_type", "").strip().upper()
         print(f"[DEBUG] robot_type loaded from JSON: '{robot_type_raw}'")
+        
+        p.preset_key = self.system.strip()
+        print(f"[DEBUG] preset_key set to '{p.preset_key}'")
 
         # Broad category check
         if not any(robot_type_raw.startswith(prefix) for prefix in ("UR", "KUKA")):
@@ -95,12 +98,13 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
 
         # Full type is allowed (e.g., UR5E, UR16E, KUKA)
         p.robot_type = robot_type_raw
-        
+
+        # ▸ Armature auto-detect
         for arm_name in entry.get("armatures", []):
             if arm_name in bpy.data.objects:
                 p.armature = arm_name
                 break
-                
+
         print(f"[DEBUG] system={self.system} → robot_type={p.robot_type}, armature={p.armature}")
 
         arm = bpy.data.objects.get(p.armature)
@@ -133,14 +137,13 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
                 if name and obj:
                     setattr(p, f"{key}_object", obj)
 
-        re_register_stage_properties()
         register_stage_properties(entry)
         re_register_jog_properties()
         update_jog_properties()
 
         self.report({'INFO'}, f"Imported and synced system: {self.system}")
         return {'FINISHED'}
-
+    
     def invoke(self, ctx, event):
         return ctx.window_manager.invoke_props_dialog(self)
 
