@@ -90,3 +90,11 @@ def unregister():
         except Exception:
             pass
         
+    def delayed_jog_update():
+        try:
+            update_jog_properties()
+        except Exception as e:
+            print(f"[WARNING] update_jog_properties (delayed) failed: {e}")
+        return None 
+
+    bpy.app.timers.register(delayed_jog_update, first_interval=0.1)
