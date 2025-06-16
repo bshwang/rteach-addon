@@ -240,26 +240,26 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.prop(p, "precise_linear", text="", icon='CONSTRAINT', toggle=True)
             
     def draw_stage_jog_section(self, layout, ctx):
-    p = ctx.scene.ik_motion_props
-    props = ctx.scene.stage_props
-    box = layout.box()
-    row = box.row()
-    icon = 'TRIA_DOWN' if p.show_stage else 'TRIA_RIGHT'
-    row.prop(p, "show_stage", icon=icon, text="Stage Jog Mode", emboss=False)
-
-    if not p.show_stage:
-        return
-
-    if not props or not hasattr(props, "__annotations__") or not props.__annotations__:
-        box.label(text="⚠️ Stage sliders not registered yet", icon='ERROR')
-        return
-
-    for key in props.__annotations__.keys():
-        row = box.row(align=True)
-        col = row.column(align=True)
-        col.prop(props, key, text=props.bl_rna.properties[key].name, slider=True)
-        op = row.operator("object.focus_stage_joint", text="", emboss=True, icon='RESTRICT_SELECT_OFF')
-        op.name = key
+        p = ctx.scene.ik_motion_props
+        props = ctx.scene.stage_props
+        box = layout.box()
+        row = box.row()
+        icon = 'TRIA_DOWN' if p.show_stage else 'TRIA_RIGHT'
+        row.prop(p, "show_stage", icon=icon, text="Stage Jog Mode", emboss=False)
+    
+        if not p.show_stage:
+            return
+    
+        if not props or not hasattr(props, "__annotations__") or not props.__annotations__:
+            box.label(text="⚠️ Stage sliders not registered yet", icon='ERROR')
+            return
+    
+        for key in props.__annotations__.keys():
+            row = box.row(align=True)
+            col = row.column(align=True)
+            col.prop(props, key, text=props.bl_rna.properties[key].name, slider=True)
+            op = row.operator("object.focus_stage_joint", text="", emboss=True, icon='RESTRICT_SELECT_OFF')
+            op.name = key
         
     def draw_io_section(self, L, ctx):
         p = ctx.scene.ik_motion_props
