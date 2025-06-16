@@ -1,6 +1,7 @@
 import bpy
 import math
 import json
+import csv
 
 import numpy as np
 from mathutils import Matrix, Vector, Quaternion
@@ -297,7 +298,11 @@ class OBJECT_OT_sync_robot_type(bpy.types.Operator):
     bl_label = "Sync Robot Type"
 
     def execute(self, ctx):
-        p   = ctx.scene.ik_motion_props
+        from .robot_state import set_active_robot
+        from .settings import re_register_jog_properties
+        from .ops_import_system import update_jog_properties
+
+        p = ctx.scene.ik_motion_props
         arm = bpy.data.objects.get(p.armature) or ctx.view_layer.objects.active
         if not arm or arm.type != 'ARMATURE':
             self.report({'ERROR'}, "Select a valid armature in Setup")
@@ -312,9 +317,19 @@ class OBJECT_OT_sync_robot_type(bpy.types.Operator):
             return {'CANCELLED'}
 
         set_active_robot(p.robot_type)
+
+        try:
+            re_register_jog_properties()
+            update_jog_properties()
+        except Exception as e:
+            print(f"[ERROR] Jog property registration failed: {e}")
+
+        if ctx.area:
+            ctx.area.tag_redraw()
+
         self.report({'INFO'}, f"Robot synced to {p.robot_type}")
-        return {'FINISHED'}   
-        
+        return {'FINISHED'}
+
 # ────────────────────────────────────────────────────────────── 
 class OBJECT_OT_focus_on_target(bpy.types.Operator):
     bl_idname = "object.focus_on_target"
@@ -396,10 +411,8 @@ class OBJECT_OT_export_teach_data(bpy.types.Operator):
 
         self.report({'INFO'}, f"Exported {len(data)} TCPs → {path.name}")
         return {'FINISHED'}
-
-import csv
-from math import degrees
-
+    
+# ──────────────────────────────────────────────────────────────   
 class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
     bl_idname = "object.export_joint_graph_csv"
     bl_label = "Export Joint Graph CSV"
@@ -452,8 +465,8 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
             ("joint_ev_z",       "location",        2, False),
             ("joint_ev_y",       "location",        1, False),
             ("joint_stage_x",    "location",        0, False),
-            ("joint_stage_y",    "location",        1, True),
-            ("joint_stage_z",    "location",        2, True),
+            ("joint_stage_y",    "location",        1, False),
+            ("joint_stage_z",    "location",        2, False),
             ("joint_holder_tilt","rotation_euler",  0, True),
             ("joint_holder_rot", "rotation_euler",  2, True),
         ]
@@ -462,15 +475,13 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
             ctx.scene.frame_set(f)
             row = [f]
 
-            # ▶ KUKA (j1~j7)
             for i in range(n_bones):
                 if p.show_plot_joints[i]:
                     pb = arm.pose.bones.get(bones[i])
                     axis = axes[i]
                     angle_rad = getattr(pb.rotation_euler, axis)
-                    row.append(round(degrees(angle_rad), 3))
+                    row.append(round(math.degrees(angle_rad), 3))
 
-            # ▶ Stage
             for i, (obj_name, attr, index, is_angle) in enumerate(stage_objects):
                 if p.show_plot_joints[i + n_bones]:
                     try:
@@ -479,7 +490,7 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
                             row.append(None)
                             continue
                         val = getattr(obj, attr)[index]
-                        row.append(round(degrees(val), 3) if is_angle else round(val * 1000, 3))
+                        row.append(round(math.degrees(val), 3) if is_angle else round(val * 1000, 3))
                     except Exception:
                         row.append(None)
 
@@ -493,7 +504,76 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
 
         self.report({'INFO'}, f"CSV exported: {path}")
         return {'FINISHED'}
-	    
+    
+# ──────────────────────────────────────────────────────────────      
+class OBJECT_OT_clear_robot_system(bpy.types.Operator):
+    bl_idname = "object.clear_robot_system"
+    bl_label = "🧹 Clear System"
+
+    def execute(self, ctx):
+        scene = ctx.scene
+        p = scene.ik_motion_props
+
+        bpy.ops.object.select_all(action='SELECT')
+        bpy.ops.object.delete(use_global=False)
+
+        target_colls = {"setup", "robot", "stage", "teach data"}
+        for coll in list(bpy.data.collections):
+            if coll.name.lower() in target_colls:
+                try:
+                    bpy.data.collections.remove(coll)
+                except:
+                    pass
+
+        for name in ["Target_Gizmo", "KUKA_Base", "UR5e_TCP", "UR16e_EE"]:
+            obj = bpy.data.objects.get(name)
+            if obj:
+                bpy.data.objects.remove(obj, do_unlink=True)
+
+        bpy.ops.outliner.orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=True)
+
+        p.goal_object = None
+        p.base_object = None
+        p.ee_object = None
+        p.tcp_object = None
+        p.robot_type = ""
+        p.armature = 'None' 
+
+        self.report({'INFO'}, "Cleared robot system and purged unused data")
+        return {'FINISHED'}
+    
+# ──────────────────────────────────────────────────────────────      
+class OBJECT_OT_refresh_stage_sliders(bpy.types.Operator):
+    bl_idname = "object.refresh_stage_sliders"
+    bl_label = "Refresh Stage Sliders"
+
+    def execute(self, context):
+        p = context.scene.ik_motion_props
+        props = p.stage_props
+
+        for joint in props.joints:
+            obj = bpy.data.objects.get(joint.target)
+            if not obj:
+                self.report({'WARNING'}, f"Target object '{joint.target}' not found")
+                continue
+
+            axis = joint.name.split("_")[-1].lower()
+            is_rot = "rot" in joint.target or "tilt" in joint.target
+
+            idx = {"x": 0, "y": 1, "z": 2}.get(axis[-1], 2)
+            val = obj.rotation_euler[idx] if is_rot else obj.location[idx]
+
+            # 내부값 → UI 단위로 환산
+            if joint.unit_type == "mm":
+                val *= 1000.0
+            elif joint.unit_type == "deg":
+                val = math.degrees(val)
+
+            joint.value = val
+
+        self.report({'INFO'}, "Stage sliders refreshed from scene")
+        return {'FINISHED'}
+    
 # ──────────────────────────────────────────────────────────────   
 classes = (
     OBJECT_OT_clear_path_visuals,
@@ -508,4 +588,6 @@ classes = (
     OBJECT_OT_focus_on_target,
     OBJECT_OT_export_teach_data,
     OBJECT_OT_export_joint_graph_csv,
+    OBJECT_OT_clear_robot_system,
+    OBJECT_OT_refresh_stage_sliders,
 )
