@@ -1,13 +1,96 @@
-# setting.py
+# setting.py 
 
+import os
 import bpy
 import json
 import math
+
 from .core import get_BONES, get_AXES
 from bpy import context
 
+from bpy.utils import unregister_class, register_class
+
 MAX_JOINTS = 8  # iiwa 7+base, UR 6+base
 
+class StageJogProperties(bpy.types.PropertyGroup):
+
+    joint_ev_z: bpy.props.FloatProperty(
+        name="joint_ev_z",
+        subtype='DISTANCE',
+        unit='LENGTH',
+        min=-0.58, max=0.22,
+        get=lambda self: bpy.data.objects["joint_ev_z"].location[2]
+        if "joint_ev_z" in bpy.data.objects else 0.0,
+        set=lambda self, v: setattr(bpy.data.objects["joint_ev_z"].location, "z", v)
+        if "joint_ev_z" in bpy.data.objects else None
+    )
+
+    joint_ev_y: bpy.props.FloatProperty(
+        name="joint_ev_y",
+        subtype='DISTANCE',
+        unit='LENGTH',
+        min=-0.4, max=0.0,
+        get=lambda self: bpy.data.objects["joint_ev_y"].location[1]
+        if "joint_ev_y" in bpy.data.objects else 0.0,
+        set=lambda self, v: setattr(bpy.data.objects["joint_ev_y"].location, "y", v)
+        if "joint_ev_y" in bpy.data.objects else None
+    )
+
+    joint_stage_x: bpy.props.FloatProperty(
+        name="joint_stage_x",
+        subtype='DISTANCE',
+        unit='LENGTH',
+        min=0.0, max=0.4,
+        get=lambda self: bpy.data.objects["joint_stage_x"].location[0]
+        if "joint_stage_x" in bpy.data.objects else 0.0,
+        set=lambda self, v: setattr(bpy.data.objects["joint_stage_x"].location, "x", v)
+        if "joint_stage_x" in bpy.data.objects else None
+    )
+
+    joint_stage_y: bpy.props.FloatProperty(
+        name="joint_stage_y",
+        subtype='DISTANCE',
+        unit='LENGTH',
+        min=-0.12, max=0.28,
+        get=lambda self: bpy.data.objects["joint_stage_y"].location[1]
+        if "joint_stage_y" in bpy.data.objects else 0.0,
+        set=lambda self, v: setattr(bpy.data.objects["joint_stage_y"].location, "y", v)
+        if "joint_stage_y" in bpy.data.objects else None
+    )
+
+    joint_stage_z: bpy.props.FloatProperty(
+        name="joint_stage_z",
+        subtype='DISTANCE',
+        unit='LENGTH',
+        min=-0.25, max=0.55,
+        get=lambda self: bpy.data.objects["joint_stage_z"].location[2]
+        if "joint_stage_z" in bpy.data.objects else 0.0,
+        set=lambda self, v: setattr(bpy.data.objects["joint_stage_z"].location, "z", v)
+        if "joint_stage_z" in bpy.data.objects else None
+    )
+
+    joint_holder_tilt: bpy.props.FloatProperty(
+        name="joint_holder_tilt",
+        subtype='ANGLE',
+        unit='ROTATION',
+        min=0.0, max=0.6109,
+        get=lambda self: bpy.data.objects["joint_holder_tilt"].rotation_euler[0]
+        if "joint_holder_tilt" in bpy.data.objects else 0.0,
+        set=lambda self, v: setattr(bpy.data.objects["joint_holder_tilt"].rotation_euler, "x", v)
+        if "joint_holder_tilt" in bpy.data.objects else None
+    )
+
+    joint_holder_rot: bpy.props.FloatProperty(
+        name="joint_holder_rot",
+        subtype='ANGLE',
+        unit='ROTATION',
+        min=0.0, max=2.3562,
+        get=lambda self: bpy.data.objects["joint_holder_rot"].rotation_euler[2]
+        if "joint_holder_rot" in bpy.data.objects else 0.0,
+        set=lambda self, v: setattr(bpy.data.objects["joint_holder_rot"].rotation_euler, "z", v)
+        if "joint_holder_rot" in bpy.data.objects else None
+    )
+    
 class TcpItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="TCP Name")
 
@@ -17,7 +100,7 @@ def create_getter(i):
         arm = bpy.data.objects.get(arm_name)
         bones = get_BONES()
         axes = get_AXES()
-        
+
         if not arm or i >= len(bones):
             return 0.0
 
@@ -25,7 +108,8 @@ def create_getter(i):
         pb = arm.pose.bones.get(bn)
         if not pb:
             return 0.0
-        axis[i] = axes[i]
+
+        axis = axes[i]
         return getattr(pb.rotation_euler, axis)
     return getter
 
@@ -35,27 +119,65 @@ def create_setter(i):
         arm = bpy.data.objects.get(arm_name)
         bones = get_BONES()
         axes = get_AXES()
-        
+
         if not arm or i >= len(bones):
-            return 0.0
+            return
 
         bn = bones[i]
         pb = arm.pose.bones.get(bn)
         if not pb:
             return
-            
-        axis[i] = axes[i]
+
+        axis = axes[i]
         setattr(pb.rotation_euler, axis, value)
+        bpy.context.view_layer.update()
+    return setter
+
+def create_stage_getter(obj_name, axis="z", unit="mm", joint_type="location"):
+    def getter(self):
+        obj = bpy.data.objects.get(obj_name)
+        if not obj:
+            return 0.0
+        idx = {"x": 0, "y": 1, "z": 2}[axis[-1]]
+
+        if joint_type.startswith("rotation"):
+            return obj.rotation_euler[idx]  # ✅ 더 이상 math.degrees() 쓰지 않음
+        else:
+            return obj.location[idx]
+    return getter
+
+def create_stage_setter(obj_name, axis="z", unit="mm", joint_type="location"):
+    def setter(self, value):
+        obj = bpy.data.objects.get(obj_name)
+        if not obj:
+            return
+        idx = {"x": 0, "y": 1, "z": 2}[axis[-1]]
+
+        if joint_type.startswith("rotation"):
+            obj.rotation_mode = 'XYZ'
+            rot = list(obj.rotation_euler)
+            rot[idx] = value
+            obj.rotation_euler = rot
+        else:
+            loc = list(obj.location)
+            loc[idx] = value
+            obj.location = loc
+
         bpy.context.view_layer.update()
     return setter
 
 class JogProperties(bpy.types.PropertyGroup):
     pass
 
-JogProperties.__annotations__ = {}
+def delayed_update_jog_props():
+    from .ops_import_system import update_jog_properties
+    update_jog_properties()
+    print("[DEBUG] JogProperties updated after short delay")
+    return None  
 
 def re_register_jog_properties():
     from bpy.utils import unregister_class, register_class
+
     try:
         unregister_class(JogProperties)
     except Exception as e:
@@ -66,44 +188,73 @@ def re_register_jog_properties():
         if hasattr(bpy.types.Scene, "jog_props"):
             del bpy.types.Scene.jog_props
         bpy.types.Scene.jog_props = bpy.props.PointerProperty(type=JogProperties)
-        print("[DEBUG] JogProperties re-registered with updated properties")
+        print("[DEBUG] JogProperties re-registered")
     except Exception as e:
-        print(f"[ERROR] Failed to re-register JogProperties: {e}")
+        print(f"[ERROR] JogProperties re-registration failed: {e}")
 
-class StageJointItem(bpy.types.PropertyGroup):
-    name: bpy.props.StringProperty(name="Label")
-    value: bpy.props.FloatProperty(name="Value", default=0.0, unit='NONE')
-
-class StageJogProperties(bpy.types.PropertyGroup):
-    joints: bpy.props.CollectionProperty(type=StageJointItem)
+    bpy.app.timers.register(delayed_update_jog_props, first_interval=0.1)
 
 def register_stage_properties(preset):
     items = preset.get("stage_joints", [])
-    stage_data = bpy.context.scene.stage_props
-    stage_data.joints.clear()
+    StageJogProperties.__annotations__.clear()
 
     for item in items:
-        joint = stage_data.joints.add()
-        joint.name = item.get("label", item.get("name", "Stage"))
-        joint.value = 0.0
+        label = item["label"]
+        obj_name = item["name"]
+        axis = item.get("axis", "z")
+        unit = item.get("unit", "mm").lower()
+        joint_type = item.get("type", "location").lower()
 
+        min_val = item.get("min", -1000)
+        max_val = item.get("max", 1000)
+
+        if unit == "deg":
+            min_val = math.radians(min_val)
+            max_val = math.radians(max_val)
+        elif unit == "mm":
+            min_val = min_val / 1000.0
+            max_val = max_val / 1000.0
+
+        getter = create_stage_getter(obj_name, axis=axis, unit=unit, joint_type=joint_type)
+        setter = create_stage_setter(obj_name, axis=axis, unit=unit, joint_type=joint_type)
+
+        StageJogProperties.__annotations__[obj_name] = bpy.props.FloatProperty(
+            name=label,
+            subtype='ANGLE' if unit == "deg" else 'NONE',
+            unit='ROTATION' if unit == "deg" else 'LENGTH',
+            min=min_val,
+            max=max_val,
+            get=getter,
+            set=setter
+        )
+        
 def re_register_stage_properties():
-    from bpy.utils import unregister_class, register_class
-    try:
-        unregister_class(StageJointItem)
-    except:
-        pass
-    try:
-        unregister_class(StageJogProperties)
-    except:
-        pass
+    
+    cls_joint = globals().get("StageJointItem", None)
+    cls_stage = globals().get("StageJogProperties", None)
 
-    register_class(StageJointItem)
-    register_class(StageJogProperties)
+    if cls_joint:
+        try:
+            unregister_class(cls_joint)
+        except:
+            pass
+
+    if cls_stage:
+        try:
+            unregister_class(cls_stage)
+        except:
+            pass
+
+    if cls_joint:
+        register_class(cls_joint)
+    if cls_stage:
+        register_class(cls_stage)
 
     if hasattr(bpy.types.Scene, "stage_props"):
         del bpy.types.Scene.stage_props
-    bpy.types.Scene.stage_props = bpy.props.PointerProperty(type=StageJogProperties)
+    bpy.types.Scene.stage_props = bpy.props.PointerProperty(type=cls_stage)
+
+JogProperties.__annotations__ = {}
 
 def in_collections(collection_names):
     def _poll(self, obj):
@@ -165,20 +316,7 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         name="Show Jog Mode",
         default=False,
     )
-    
-    show_plot_joints: bpy.props.BoolVectorProperty(
-        name="Plot Joints",
-        description="Select joints to export",
-        size=14,  # j1~j7 + stage_0~stage_6
-        default=(True,) * 14
-    )
-    show_io: bpy.props.BoolProperty(name="Show Import/Export", default=True)
-    
-    show_stage: bpy.props.BoolProperty(
-        name="Show Stage Jog",
-        default=True
-    )
-    
+
     motion_speed: bpy.props.FloatProperty(
         name="Speed (mm/s)",
         default=100.0,
@@ -230,12 +368,6 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         default=True
     )
 
-    goal_object: bpy.props.PointerProperty(
-        name="Target",
-        type=bpy.types.Object,
-        poll=in_collections(["Setup"])
-    )
-
     base_object: bpy.props.PointerProperty(
         name="Robot Base",
         type=bpy.types.Object,
@@ -254,10 +386,16 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         poll=in_empty_setup()
     )
 
+    goal_object: bpy.props.PointerProperty(
+        name="Target",
+        type=bpy.types.Object,
+        poll=in_collections(["Setup"])
+    )
+
     linear_target: bpy.props.PointerProperty(
         name="Linear Target",
         type=bpy.types.Object,
-        poll=in_empty_setup()
+        poll=in_collections(["Teach data"])
     )
 
     linear_frames: bpy.props.IntProperty(
@@ -285,6 +423,20 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         description="Use Lie-group planner for linear motion (KUKA only)",
         default=False
     )
+        
+    show_stage: bpy.props.BoolProperty(
+        name="Show Stage Jog",
+        default=True
+    )
+    
+    show_plot_joints: bpy.props.BoolVectorProperty(
+        name="Plot Joints",
+        description="Select joints to export",
+        size=14,  # j1~j7 + stage_0~stage_6
+        default=(True,) * 14
+    )
+    
+    show_io: bpy.props.BoolProperty(name="Show Import/Export", default=True)
 
     armature: bpy.props.EnumProperty(items=lambda s,c:[(o.name,o.name,'') for o in bpy.data.objects if o.type=='ARMATURE'] or [('None','None','')])
     shoulder: bpy.props.EnumProperty(items=[('L','L',''),('R','R','')], default='R')
@@ -342,3 +494,4 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         except: return []
     @temp_solutions.setter
     def temp_solutions(self, v): self.ik_temp_solutions = json.dumps(v)
+    
