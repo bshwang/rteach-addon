@@ -61,35 +61,31 @@ def register():
     bpy.types.Scene.jog_props = bpy.props.PointerProperty(type=JogProperties)
     bpy.types.Scene.stage_props = bpy.props.PointerProperty(type=StageJogProperties)
 
-    from .settings import (
-        re_register_stage_properties,
-        register_stage_properties
-    )
-    from .ops_import_system import update_jog_properties
+    ui_pie.register()
+    ui_overlay.register()
 
-    update_jog_properties()
-    register_stage_properties({
-        "stage_joints": [
-            {
-                "name": "placeholder_stage",
-                "label": "Placeholder",
-                "type": "location",
-                "axis": "x",
-                "min": 0,
-                "max": 1,
-                "unit": "mm"
-            }
-        ]
-    })
-    re_register_stage_properties()
-    
-def unregister():
-    for cls in reversed(classes):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception:
-            pass
-        
+    try:
+        register_stage_properties({
+            "stage_joints": [
+                {
+                    "name": "placeholder_stage",
+                    "label": "Placeholder",
+                    "type": "location",
+                    "axis": "x",
+                    "min": 0,
+                    "max": 1,
+                    "unit": "mm"
+                }
+            ]
+        })
+    except Exception as e:
+        print(f"[WARNING] register_stage_properties failed during register: {e}")
+
+    try:
+        re_register_stage_properties()
+    except Exception as e:
+        print(f"[WARNING] re_register_stage_properties failed during register: {e}")
+
     def delayed_jog_update():
         try:
             update_jog_properties()
@@ -98,3 +94,15 @@ def unregister():
         return None 
 
     bpy.app.timers.register(delayed_jog_update, first_interval=0.1)
+        
+def unregister():
+    for cls in reversed(classes):
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception:
+            pass
+    try:
+        ui_pie.unregister()
+        ui_overlay.unregister()
+    except:
+        pass
