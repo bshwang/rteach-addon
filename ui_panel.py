@@ -1,6 +1,6 @@
-# ui_panel.py 
 import bpy
-from .settings import IKMotionProperties, JogProperties, StageJogProperties
+from .settings import IKMotionProperties
+from .settings_static import JogProperties, StageJogProperties
 from .robot_state import get_active_robot
 from .core import get_BONES, get_armature_bones, get_joint_limits
 from .robot_presets import ROBOT_CONFIGS
