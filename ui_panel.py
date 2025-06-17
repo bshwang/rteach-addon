@@ -241,27 +241,36 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.prop(p, "precise_linear", text="", icon='CONSTRAINT', toggle=True)
 
     def draw_stage_jog_section(self, layout, ctx):
-        p = ctx.scene.ik_motion_props
-        props = ctx.scene.stage_props
-        box = layout.box()
-        row = box.row()
-        icon = 'TRIA_DOWN' if p.show_stage else 'TRIA_RIGHT'
-        row.prop(p, "show_stage", icon=icon, text="Stage Jog Mode", emboss=False)
-        if not p.show_stage: return
-    
-        stage_defs = ROBOT_CONFIGS.get(p.robot_type, {}).get("stage_joints", [])
-        if not stage_defs:
-            box.label(text="No stage jog for this robot.")
-            return
-    
-        for key, label, unit, *_ in stage_defs:
-            if hasattr(props, key):
-                row = box.row(align=True)
-                row.prop(props, key, text=label, slider=True)
-                op = row.operator("object.focus_stage_joint", text="", icon='RESTRICT_SELECT_OFF')
-                op.name = key
-            else:
-                box.label(text=f"⚠ Missing: {key}")
+    from .robot_presets import ROBOT_CONFIGS
+
+def draw_stage_jog_section(self, layout, ctx):
+    p = ctx.scene.ik_motion_props
+    props = ctx.scene.stage_props
+    box = layout.box()
+
+    row = box.row()
+    icon = 'TRIA_DOWN' if p.show_stage else 'TRIA_RIGHT'
+    row.prop(p, "show_stage", icon=icon, text="Stage Jog Mode", emboss=False)
+
+    if not p.show_stage:
+        return
+
+    # 현재 로봇의 stage_joints 목록 가져오기
+    config = ROBOT_CONFIGS.get(p.robot_type, {})
+    joints = config.get("stage_joints", [])
+    if not joints:
+        box.label(text="This robot has no stage joints")
+        return
+
+    for joint in joints:
+        key, label, unit, *_ = joint
+        if hasattr(props, key):
+            row = box.row(align=True)
+            row.prop(props, key, text=label, slider=True)
+            op = row.operator("object.focus_stage_joint", text="", icon='RESTRICT_SELECT_OFF')
+            op.name = key
+        else:
+            box.label(text=f"⚠ Missing: {key}")
             
     def draw_io_section(self, L, ctx):
         p = ctx.scene.ik_motion_props
