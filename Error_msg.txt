@@ -1,8 +1,5 @@
-KeyError: 't'
-File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\settings_static.py", line 68, in getter
-Traceback (most recent call last):
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\settings_static.py", line 72, in getter
-    idx = {"x": 0, "y": 1, "z": 2}[axis.lower()]
-          ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
-KeyError: 't'
-File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\settings_static.py", line 68, in getter
+# 어떤 Armature들이 있는지 확인
+print("▶ Available Armatures:")
+for obj in bpy.data.objects:
+    if obj.type == 'ARMATURE':
+        print(f" - {obj.name} | bones: {len(obj.data.bones)}")
