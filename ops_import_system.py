@@ -22,7 +22,7 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
             self.report({'ERROR'}, f"Preset '{self.system}' not found")
             return {'CANCELLED'}
 
-        # ① .blend 자산 불러오기
+        # ① 로봇 자산 불러오기
         addon_dir = os.path.dirname(__file__)
         blend_path = os.path.join(addon_dir, "robot_assets", f"{self.system}.blend")
 
@@ -40,39 +40,29 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
             if coll:
                 ctx.scene.collection.children.link(coll)
 
-        # ② 로봇 설정값 저장
+        # ② 로봇 정보 설정
         p = ctx.scene.ik_motion_props
         p.robot_type = self.system
         p.preset_key = self.system
         print(f"[INFO] Robot system set to '{self.system}'")
 
-        # ③ Armature 자동 설정
         arm_name = entry.get("armature")
         if arm_name and arm_name in bpy.data.objects:
             p.armature = arm_name
             print(f"[INFO] Armature set to '{arm_name}'")
 
-        # ④ Setup 오브젝트 지연 할당 (goal/base/tcp/ee)
-        def delayed_setup_assignment():
-            for key in ["goal_object", "base_object", "tcp_object", "ee_object"]:
-                name = entry.get(key)
-                if not name:
-                    continue
-                obj = bpy.data.objects.get(name)
-                if not obj:
-                    print(f"[WARN] {key} target '{name}' not found")
-                    continue
-                valid = any(c.name == "Setup" and obj.name in c.objects for c in bpy.data.collections)
-                if valid:
-                    setattr(p, key, obj)
-                    print(f"[INFO] {key} set to '{name}'")
+        # ③ goal/base/tcp/ee 설정
+        setup = entry.get("setup_objects", {})
+        for key in ["goal", "base", "tcp", "ee"]:
+            name = setup.get(key)
+            if name and name in bpy.data.objects:
+                obj = bpy.data.objects[name]
+                in_setup = any(c.name == "Setup" and obj.name in c.objects for c in bpy.data.collections)
+                if in_setup:
+                    setattr(p, f"{key}_object", obj)
+                    print(f"[INFO] {key}_object set to '{name}'")
                 else:
-                    print(f"[SKIP] {key} '{name}' is not in 'Setup' collection")
-
-            return None  # run once
-
-        # 지연 등록: 컬렉션 연결 완료 후 실행
-        bpy.app.timers.register(delayed_setup_assignment, first_interval=0.1)
+                    print(f"[SKIP] {key}_object '{name}' is not in 'Setup' collection")
 
         self.report({'INFO'}, f"Imported system: {self.system}")
         return {'FINISHED'}
@@ -80,7 +70,6 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
     def invoke(self, ctx, event):
         return ctx.window_manager.invoke_props_dialog(self)
 
-# ──────────────────────────────────────────────
 def register():
     bpy.utils.register_class(OBJECT_OT_import_robot_system)
 
