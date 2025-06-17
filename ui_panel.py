@@ -3,6 +3,7 @@ import bpy
 from .settings import IKMotionProperties, JogProperties, StageJogProperties
 from .robot_state import get_active_robot
 from .core import get_BONES, get_armature_bones, get_joint_limits
+from .core_stage import get_stage_labels
 
 class UI_UL_tcp_list(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
@@ -238,33 +239,31 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.scale_x = 1.1
             row.label(text="High Precision Linear Mode")
             row.prop(p, "precise_linear", text="", icon='CONSTRAINT', toggle=True)
-            
-from .core_stage import get_stage_labels
 
-def draw_stage_jog_section(self, layout, ctx):
-    p = ctx.scene.ik_motion_props
-    props = ctx.scene.stage_props
-    box = layout.box()
-    row = box.row()
-    icon = 'TRIA_DOWN' if p.show_stage else 'TRIA_RIGHT'
-    row.prop(p, "show_stage", icon=icon, text="Stage Jog Mode", emboss=False)
+    def draw_stage_jog_section(self, layout, ctx):
+        p = ctx.scene.ik_motion_props
+        props = ctx.scene.stage_props
+        box = layout.box()
+        row = box.row()
+        icon = 'TRIA_DOWN' if p.show_stage else 'TRIA_RIGHT'
+        row.prop(p, "show_stage", icon=icon, text="Stage Jog Mode", emboss=False)
 
-    if not p.show_stage:
-        return
+        if not p.show_stage:
+            return
 
-    labels = get_stage_labels(p.robot_type)
-    if not labels:
-        box.label(text="No stage jog defined for this robot.")
-        return
+        labels = get_stage_labels(p.robot_type)
+        if not labels:
+            box.label(text="No stage jog defined for this robot.")
+            return
 
-    for key in labels:
-        if hasattr(props, key):
-            row = box.row(align=True)
-            row.prop(props, key, slider=True)
-            op = row.operator("object.focus_stage_joint", text="", icon='RESTRICT_SELECT_OFF')
-            op.name = key
-        else:
-            box.label(text=f"⚠️ Missing prop: {key}")
+        for key in labels:
+            if hasattr(props, key):
+                row = box.row(align=True)
+                row.prop(props, key, slider=True)
+                op = row.operator("object.focus_stage_joint", text="", icon='RESTRICT_SELECT_OFF')
+                op.name = key
+            else:
+                box.label(text=f"⚠️ Missing prop: {key}")
         
     def draw_io_section(self, L, ctx):
         p = ctx.scene.ik_motion_props
