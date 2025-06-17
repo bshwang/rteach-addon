@@ -2,47 +2,68 @@ import bpy
 import math
 from .robot_presets import ROBOT_CONFIGS
 
-MAX_JOINTS = 8  # max robot DOF supported
+MAX_JOINTS = 8  # 최대 지원 관절 수
 
-class JogProperties(bpy.types.PropertyGroup): pass
+class JogProperties(bpy.types.PropertyGroup):
+    pass
+
 JogProperties.__annotations__ = {}
+
+def get_robot_axes():
+    p = bpy.context.scene.ik_motion_props
+    return ROBOT_CONFIGS.get(p.robot_type, {}).get("axes", ["z"] * MAX_JOINTS)
 
 def create_joint_getter(i):
     def getter(self):
         p = bpy.context.scene.ik_motion_props
+        axes = get_robot_axes()
+        if i >= len(axes):
+            return 0.0
+
         arm = bpy.data.objects.get(p.armature)
-        if not arm: return 0.0
+        if not arm:
+            return 0.0
         bone = arm.pose.bones.get(f"j{i+1}")
-        if not bone: return 0.0
-        axis = get_robot_axes()[i]
+        if not bone:
+            return 0.0
+
+        axis = axes[i]
         return getattr(bone.rotation_euler, axis)
     return getter
 
 def create_joint_setter(i):
     def setter(self, value):
         p = bpy.context.scene.ik_motion_props
+        axes = get_robot_axes()
+        if i >= len(axes):
+            return
+
         arm = bpy.data.objects.get(p.armature)
-        if not arm: return
+        if not arm:
+            return
         bone = arm.pose.bones.get(f"j{i+1}")
-        if not bone: return
-        axis = get_robot_axes()[i]
+        if not bone:
+            return
+
+        axis = axes[i]
         bone.rotation_mode = 'XYZ'
         setattr(bone.rotation_euler, axis, value)
         bpy.context.view_layer.update()
     return setter
 
-def get_robot_axes():
-    p = bpy.context.scene.ik_motion_props
-    return ROBOT_CONFIGS.get(p.robot_type, {}).get("axes", ["z"] * 6)
-
+# Jog 슬라이더 등록 (joint_0 ~ joint_7)
 for i in range(MAX_JOINTS):
     JogProperties.__annotations__[f"joint_{i}"] = bpy.props.FloatProperty(
-        name=f"Joint {i+1}", subtype='ANGLE', unit='ROTATION',
-        min=-math.pi, max=math.pi,
+        name=f"Joint {i+1}",
+        subtype='ANGLE',
+        unit='ROTATION',
+        min=-math.pi,
+        max=math.pi,
         get=create_joint_getter(i),
         set=create_joint_setter(i)
     )
 
+# Stage 조인트 전체 superset 등록 (모든 로봇의 조합 포함)
 class StageJogProperties(bpy.types.PropertyGroup):
     joint_ev_z: bpy.props.FloatProperty(name="EV_Z", unit='LENGTH', min=-0.58, max=0.22)
     joint_ev_y: bpy.props.FloatProperty(name="EV_Y", unit='LENGTH', min=-0.4, max=0.0)
@@ -55,6 +76,7 @@ class StageJogProperties(bpy.types.PropertyGroup):
     joint_rot: bpy.props.FloatProperty(name="Rotation", unit='ROTATION', min=-math.pi, max=math.pi)
     joint_torso: bpy.props.FloatProperty(name="Torso", unit='ROTATION', min=-math.pi/2, max=math.pi/2)
 
+# 등록 / 해제 함수
 def register_static_properties():
     bpy.utils.register_class(JogProperties)
     bpy.utils.register_class(StageJogProperties)
@@ -64,5 +86,5 @@ def register_static_properties():
 def unregister_static_properties():
     del bpy.types.Scene.jog_props
     del bpy.types.Scene.stage_props
-    bpy.utils.unregister_class(JogProperties)
     bpy.utils.unregister_class(StageJogProperties)
+    bpy.utils.unregister_class(JogProperties)
