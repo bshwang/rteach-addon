@@ -1,5 +1,6 @@
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\__init__.py", line 23, in <module>
-    from .ui_panel import classes as ui_classes
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ui_panel.py", line 3, in <module>
-    from .settings import IKMotionProperties, JogProperties, StageJogProperties
-ImportError: cannot import name 'JogProperties' from 'rteach.settings' (C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\settings.py)
+File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\settings_static.py", line 11, in getter
+Traceback (most recent call last):
+  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\settings_static.py", line 17, in getter
+    axis = get_robot_axes()[i]
+           ~~~~~~~~~~~~~~~~^^^
+IndexError: list index out of range
