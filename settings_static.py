@@ -11,7 +11,11 @@ JogProperties.__annotations__ = {}
 
 def get_robot_axes():
     p = bpy.context.scene.ik_motion_props
-    return ROBOT_CONFIGS.get(p.robot_type, {}).get("axes", ["z"] * MAX_JOINTS)
+    robot = getattr(p, "robot_type", "").strip()
+    config = ROBOT_CONFIGS.get(robot)
+    if config and "axes" in config:
+        return config["axes"]
+    return ["y"] * MAX_JOINTS  # 기본은 KUKA 기준
 
 def create_joint_getter(i):
     def getter(self):
@@ -28,7 +32,9 @@ def create_joint_getter(i):
             return 0.0
 
         axis = axes[i]
-        return getattr(bone.rotation_euler, axis)
+        val = getattr(bone.rotation_euler, axis)
+        print(f"[DEBUG][GET] j{i+1} axis={axis}, val={round(math.degrees(val),1)} deg")
+        return val
     return getter
 
 def create_joint_setter(i):
@@ -49,9 +55,10 @@ def create_joint_setter(i):
         bone.rotation_mode = 'XYZ'
         setattr(bone.rotation_euler, axis, value)
         bpy.context.view_layer.update()
+        print(f"[DEBUG][SET] j{i+1} axis={axis}, val={round(math.degrees(value),1)} deg")
     return setter
 
-# Jog 슬라이더 등록 (joint_0 ~ joint_7)
+# joint_0 ~ joint_7 슬라이더 등록
 for i in range(MAX_JOINTS):
     JogProperties.__annotations__[f"joint_{i}"] = bpy.props.FloatProperty(
         name=f"Joint {i+1}",
@@ -63,7 +70,7 @@ for i in range(MAX_JOINTS):
         set=create_joint_setter(i)
     )
 
-# Stage 조인트 전체 superset 등록 (모든 로봇의 조합 포함)
+# Stage 조인트 superset 등록
 class StageJogProperties(bpy.types.PropertyGroup):
     joint_ev_z: bpy.props.FloatProperty(name="EV_Z", unit='LENGTH', min=-0.58, max=0.22)
     joint_ev_y: bpy.props.FloatProperty(name="EV_Y", unit='LENGTH', min=-0.4, max=0.0)
@@ -76,7 +83,7 @@ class StageJogProperties(bpy.types.PropertyGroup):
     joint_rot: bpy.props.FloatProperty(name="Rotation", unit='ROTATION', min=-math.pi, max=math.pi)
     joint_torso: bpy.props.FloatProperty(name="Torso", unit='ROTATION', min=-math.pi/2, max=math.pi/2)
 
-# 등록 / 해제 함수
+# 등록 함수
 def register_static_properties():
     bpy.utils.register_class(JogProperties)
     bpy.utils.register_class(StageJogProperties)
