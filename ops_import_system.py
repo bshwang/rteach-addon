@@ -1,4 +1,5 @@
 import bpy
+import os
 from bpy.props import EnumProperty
 from .robot_presets import ROBOT_CONFIGS
 
@@ -21,20 +22,37 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
             self.report({'ERROR'}, f"Preset '{self.system}' not found")
             return {'CANCELLED'}
 
+        # ① .blend 파일 로드
+        addon_dir = os.path.dirname(__file__)
+        blend_path = os.path.join(addon_dir, "robot_assets", f"{self.system}.blend")
+
+        if not os.path.exists(blend_path):
+            self.report({'ERROR'}, f".blend file not found: {blend_path}")
+            return {'CANCELLED'}
+
+        with bpy.data.libraries.load(blend_path, link=False) as (data_from, data_to):
+            data_to.collections = [
+                name for name in data_from.collections
+                if name not in bpy.data.collections
+            ]
+
+        for coll in data_to.collections:
+            if coll:
+                ctx.scene.collection.children.link(coll)
+
+        # ② 로봇 설정
         p = ctx.scene.ik_motion_props
         p.robot_type = self.system
-        p.preset_key = self.system  # JSON 대체 키, 유지해도 무방
+        p.preset_key = self.system
         print(f"[INFO] Robot system set to '{self.system}'")
 
-        # ▸ Armature auto-detect
         arm_name = entry.get("armature")
         if arm_name and arm_name in bpy.data.objects:
             p.armature = arm_name
             print(f"[INFO] Armature set to '{arm_name}'")
 
-        # ▸ Setup object auto-linking
-        setup_keys = ["goal_object", "base_object", "tcp_object", "ee_object"]
-        for key in setup_keys:
+        # setup object 자동 할당
+        for key in ["goal_object", "base_object", "tcp_object", "ee_object"]:
             name = entry.get(key)
             if name and name in bpy.data.objects:
                 setattr(p, key, bpy.data.objects[name])
@@ -46,6 +64,7 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
     def invoke(self, ctx, event):
         return ctx.window_manager.invoke_props_dialog(self)
 
+# ──────────────────────────────────────────────
 def register():
     bpy.utils.register_class(OBJECT_OT_import_robot_system)
 
