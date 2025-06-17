@@ -1,6 +1,0 @@
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\__init__.py", line 21, in <module>
-    from .ops_teach_main import classes as main_classes
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops_teach_main.py", line 11, in <module>
-    from .core import (
-ImportError: cannot import name 'get_armature_bones' from 'rteach.core' (C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\core.py)
-Info: Updated sidebar tabs
