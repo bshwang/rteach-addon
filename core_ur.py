@@ -1,28 +1,23 @@
-import bpy
-
-from .robot_state import get_active_robot
-from ur_analytic_ik_ext import ur16e, ur5e
 import numpy as np
-
-ARMATURE_BONES = ["j1", "j2", "j3", "j4", "j5", "j6"]
-AXES = ['z', 'x', 'x', 'z', 'x', 'z']
+from ur_analytic_ik_ext import ur16e, ur5e
+from .robot_state import get_active_robot
 
 def _get_solver():
-    robot = get_active_robot()
-    if robot == "UR5E":
+    robot = get_active_robot().upper()
+    if "UR5" in robot:
         print("[DEBUG] Using UR5E solver")
         return ur5e
-    elif robot == "UR16E":
+    elif "UR16" in robot:
         print("[DEBUG] Using UR16E solver")
         return ur16e
     else:
         raise ValueError(f"[core_ur] Unknown UR variant: '{robot}'")
 
-def inverse_kinematics(T):
+def inverse_kinematics(T: np.ndarray):
     return _get_solver().inverse_kinematics(T)
 
-def forward_kinematics(q):
+def forward_kinematics(q: np.ndarray):
     return _get_solver().forward_kinematics(*q)
 
 def inverse_kinematics_fixed_q3(T: np.ndarray, q3: float):
-    return inverse_kinematics(T)
+    return inverse_kinematics(T)  # UR solver는 q3 고정 필요 없음
