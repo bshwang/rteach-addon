@@ -1,25 +1,8 @@
->>> p = bpy.context.scene.ik_motion_props
->>> target_name = "Target_Gizmo"
->>> obj = bpy.data.objects.get(target_name)
->>> print(f"[CHECK] Object '{target_name}' exists: {obj is not None}")
-[CHECK] Object 'Target_Gizmo' exists: True
-
->>> if obj:
-...     collections = [c.name for c in obj.users_collection]
-...     print(f"[CHECK] '{target_name}' is in collections: {collections}")
-...     
-[CHECK] 'Target_Gizmo' is in collections: ['Setup']
-
->>> in_setup = any(c.name == "Setup" and obj.name in c.objects for c in bpy.data.collections)
->>> print(f"[CHECK] '{target_name}' is in Setup collection: {in_setup}")
-[CHECK] 'Target_Gizmo' is in Setup collection: True
-
->>> if obj and in_setup:
-...     p.goal_object = obj
-...     print(f"[SET] goal_object set to: {p.goal_object.name}")
-... else:
-...     print("[FAIL] poll 조건을 만족하지 않아 goal_object로 등록 불가")
-...     
-[SET] goal_object set to: Target_Gizmo
-
->>> 
+KeyError: 't'
+File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\settings_static.py", line 68, in getter
+Traceback (most recent call last):
+  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\settings_static.py", line 72, in getter
+    idx = {"x": 0, "y": 1, "z": 2}[axis.lower()]
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+KeyError: 't'
+File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\settings_static.py", line 68, in getter
