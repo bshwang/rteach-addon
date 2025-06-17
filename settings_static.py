@@ -4,6 +4,7 @@ from .robot_presets import ROBOT_CONFIGS
 
 MAX_JOINTS = 8
 
+# ──────────────────────────────────────────────
 class JogProperties(bpy.types.PropertyGroup):
     pass
 
@@ -58,7 +59,7 @@ def create_stage_getter(obj_name, axis, unit, joint_type):
             return math.degrees(val) if unit == "deg" else val
         else:
             val = obj.location[idx]
-            return val * 1000 if unit == "mm" else val
+            return val  # ✅ mm 그대로 반환 (Blender 내부는 m, UI에서는 mm로 보여줌)
     return getter
 
 def create_stage_setter(obj_name, axis, unit, joint_type):
@@ -72,7 +73,7 @@ def create_stage_setter(obj_name, axis, unit, joint_type):
             rot[idx] = val
             obj.rotation_euler = rot
         else:
-            val = value / 1000 if unit == "mm" else value
+            val = value / 1000.0 if unit == "mm" else value
             loc = list(obj.location)
             loc[idx] = val
             obj.location = loc
@@ -88,6 +89,14 @@ for config in ROBOT_CONFIGS.values():
         key, label, unit, min_val, max_val, axis, joint_type = joint
         if key in StageJogProperties.__annotations__:
             continue  # 중복 방지
+
+        # ✅ 단위 변환 적용 (min/max → Blender 내부 단위 기준)
+        if unit == "mm":
+            min_val /= 1000.0
+            max_val /= 1000.0
+        elif unit == "deg":
+            min_val = math.radians(min_val)
+            max_val = math.radians(max_val)
 
         subtype = 'ANGLE' if unit == "deg" else 'DISTANCE'
         blender_unit = 'ROTATION' if unit == "deg" else 'LENGTH'
