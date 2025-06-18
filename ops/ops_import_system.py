@@ -21,9 +21,9 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
         if not entry:
             self.report({'ERROR'}, f"Preset '{self.system}' not found")
             return {'CANCELLED'}
-
-        addon_dir = os.path.dirname(__file__)
-        blend_path = os.path.join(addon_dir, "robot_assets", f"{self.system}.blend")
+        
+        addon_root = os.path.dirname(os.path.dirname(__file__))  
+        blend_path = os.path.join(addon_root, "robot_assets", f"{self.system}.blend")
 
         if not os.path.exists(blend_path):
             self.report({'ERROR'}, f".blend file not found: {blend_path}")
