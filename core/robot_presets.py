@@ -11,9 +11,9 @@ ROBOT_CONFIGS = {
         "stage_joints": [
             ("joint_ev_z", "EV_Z", "mm", -580, 220, "z", "location"),
             ("joint_ev_y", "EV_Y", "mm", -400, 0, "y", "location"),
-            ("joint_stage_x", "Stage_X", "mm", 0, 400, "x", "location"),
-            ("joint_stage_y", "Stage_Y", "mm", -120, 280, "y", "location"),
-            ("joint_stage_z", "Stage_Z", "mm", -250, 550, "z", "location"),
+            ("joint_stage_x", "Holder_X", "mm", 0, 400, "x", "location"),
+            ("joint_stage_y", "Holder_Y", "mm", -120, 280, "y", "location"),
+            ("joint_stage_z", "Holder_Z", "mm", -250, 550, "z", "location"),
             ("joint_holder_tilt", "Holder_Tilt", "deg", 0, 35, "x", "rotation"),
             ("joint_holder_rot", "Holder_Rot", "deg", 0, 135, "z", "rotation"),
         ],
