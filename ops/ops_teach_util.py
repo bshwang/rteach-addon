@@ -380,6 +380,8 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
     bl_label = "Export Joint Graph CSV"
 
     def execute(self, ctx):
+        from rteach.core.robot_state import get_robot_config
+
         p = ctx.scene.ik_motion_props
         jog = ctx.scene.jog_props
         arm = bpy.data.objects.get(p.armature)
@@ -390,83 +392,69 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
             return {'CANCELLED'}
 
         bones = get_BONES()
-        axes  = get_AXES()
+        axes = get_AXES()
         n_bones = len(bones)
-        n_stage = 7
+
+        # Load stage joint config
+        robot_config = get_robot_config()
+        stage_joints = robot_config.get("stage_joints", [])
+        n_stage = len(stage_joints)
 
         frame_start = ctx.scene.frame_start
-        frame_end   = ctx.scene.frame_end
+        frame_end = ctx.scene.frame_end
         frames = list(range(frame_start, frame_end + 1))
 
         data = []
         headers = ["frame"]
 
-        label_map = {
-            "joint_ev_z": "EV_Z",
-            "joint_ev_y": "EV_Y",
-            "joint_stage_x": "Stage_X",
-            "joint_stage_y": "Stage_Y",
-            "joint_stage_z": "Stage_Z",
-            "joint_holder_tilt": "Holder_tilt",
-            "joint_holder_rot": "Holder_rot"
-        }
-
+        # Add joint names j1 ~ jN
         for i in range(n_bones):
             if p.show_plot_joints[i]:
                 headers.append(f"j{i+1}")
-        for i in range(n_stage):
-            if p.show_plot_joints[i + n_bones]:
-                obj_name = [
-                    "joint_ev_z", "joint_ev_y", "joint_stage_x",
-                    "joint_stage_y", "joint_stage_z",
-                    "joint_holder_tilt", "joint_holder_rot"
-                ][i]
-                headers.append(label_map.get(obj_name, obj_name))
 
-        stage_objects = [
-            ("joint_ev_z",       "location",        2, False),
-            ("joint_ev_y",       "location",        1, False),
-            ("joint_stage_x",    "location",        0, False),
-            ("joint_stage_y",    "location",        1, False),
-            ("joint_stage_z",    "location",        2, False),
-            ("joint_holder_tilt","rotation_euler",  0, True),
-            ("joint_holder_rot", "rotation_euler",  2, True),
-        ]
+        # Add stage joint labels from config
+        for i, sj in enumerate(stage_joints):
+            if p.show_plot_joints[i + n_bones]:
+                headers.append(sj.get("label", sj.get("name", f"stage_{i}")))
 
         for f in frames:
-            ctx.scene.frame_set(f)
+            bpy.context.scene.frame_set(f)
             row = [f]
 
-            for i in range(n_bones):
+            # FK joints
+            for i, bname in enumerate(bones):
                 if p.show_plot_joints[i]:
-                    pb = arm.pose.bones.get(bones[i])
-                    axis = axes[i]
-                    angle_rad = getattr(pb.rotation_euler, axis)
-                    row.append(round(math.degrees(angle_rad), 3))
+                    b = arm.pose.bones.get(bname)
+                    if not b:
+                        row.append(0)
+                        continue
 
-            for i, (obj_name, attr, index, is_angle) in enumerate(stage_objects):
+                    axis = axes[i]
+                    angle = b.rotation_euler.to_quaternion().angle if b.rotation_mode == 'QUATERNION' else getattr(b.rotation_euler, axis)
+                    row.append(round(angle, 4))
+
+            # Stage joints
+            for i, sj in enumerate(stage_joints):
                 if p.show_plot_joints[i + n_bones]:
-                    try:
-                        obj = bpy.data.objects.get(obj_name)
-                        if obj is None:
-                            row.append(None)
-                            continue
-                        val = getattr(obj, attr)[index]
-                        row.append(round(math.degrees(val), 3) if is_angle else round(val * 1000, 3))
-                    except Exception:
-                        row.append(None)
+                    ob = bpy.data.objects.get(sj["name"])
+                    if not ob:
+                        row.append(0)
+                        continue
+
+                    val = ob.location[0] if sj["type"] == "location" else ob.rotation_euler.to_quaternion().angle if ob.rotation_mode == 'QUATERNION' else ob.rotation_euler[0]
+                    row.append(round(val, 4))
 
             data.append(row)
 
-        path = bpy.path.abspath("//joint_plot_export.csv")
-        with open(path, "w", newline="") as f:
+        path = Path(bpy.path.abspath("//joint_graph.csv"))
+        with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(headers)
             writer.writerows(data)
 
-        self.report({'INFO'}, f"CSV exported: {path}")
-        return {'FINISHED'}
-    
+        self.report({'INFO'}, f"Exported CSV with {len(data)} frames → {path.name}")
+        return {'FINISHED'}  
+	    
 # ──────────────────────────────────────────────────────────────      
 class OBJECT_OT_clear_robot_system(bpy.types.Operator):
     bl_idname = "object.clear_robot_system"
