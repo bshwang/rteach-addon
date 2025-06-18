@@ -186,6 +186,12 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         size=14,  # j1~j7 + stage_0~stage_6
         default=(True,) * 14
     )
+
+    show_overlay: bpy.props.BoolProperty(
+        name="Show Overlay",
+        description="Display overlay text in 3D View",
+        default=True
+    )
     
     show_io: bpy.props.BoolProperty(name="Show Import/Export", default=True)
 
