@@ -8,8 +8,8 @@ import random
 import math
 import numpy as np
 from scipy.linalg import logm, expm, norm
-import kuka_iiwa_ik  # .pyd
-import kuka_iiwa_ik_generated as kk  # FK helper
+import rteach.ext.kuka_iiwa_ik  # .pyd
+import rteach.ext.kuka_iiwa_ik_generated as kk  # FK helper
 
 # ------------------------------------------------------------------
 def _interpolate_se3(T0, T1, t: float) -> np.ndarray:
