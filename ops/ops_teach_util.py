@@ -6,14 +6,14 @@ import csv
 import numpy as np
 from mathutils import Matrix, Vector, Quaternion
 from scipy.spatial.transform import Rotation as R, Slerp
-from .settings import IKMotionProperties
-from .robot_state import get_active_robot, set_active_robot
-from .core import (
-    solve_and_apply, apply_solution, get_inverse_kinematics, compute_base_matrix, 
+from rteach.config.settings import IKMotionProperties
+from rteach.core.robot_state import get_active_robot, set_active_robot
+from rteach.core.core import (
+    apply_solution, get_inverse_kinematics, compute_base_matrix, 
     compute_tcp_offset_matrix, get_forward_kinematics, 
     sort_solutions, get_BONES, get_AXES, get_best_ik_solution,
 )
-from .core_iiwa import linear_move
+from rteach.core.core_iiwa import linear_move
 from pathlib import Path
 
 # ──────────────────────────────────────────────────────────────
@@ -286,48 +286,10 @@ class OBJECT_OT_snap_goal_to_active(bpy.types.Operator):
             return {'CANCELLED'}
 
         goal.matrix_world = active.matrix_world.copy()
-        goal.scale = (1, 1, 1)  # 🔧 크기 초기화 (선택적)
+        goal.scale = (1, 1, 1)  
         goal.select_set(True)
 
         p.status_text = f"Snapped target to {active.name}"
-        return {'FINISHED'}
-    
-# ──────────────────────────────────────────────────────────────     
-class OBJECT_OT_sync_robot_type(bpy.types.Operator):
-    bl_idname = "object.sync_robot_type"
-    bl_label = "Sync Robot Type"
-
-    def execute(self, ctx):
-        from .robot_state import set_active_robot
-        from .settings import re_register_jog_properties
-        from .ops_import_system import update_jog_properties
-
-        p = ctx.scene.ik_motion_props
-        arm = bpy.data.objects.get(p.armature) or ctx.view_layer.objects.active
-        if not arm or arm.type != 'ARMATURE':
-            self.report({'ERROR'}, "Select a valid armature in Setup")
-            return {'CANCELLED'}
-
-        bone_cnt = len(arm.pose.bones)
-        if p.robot_type == 'UR' and bone_cnt != 7:
-            self.report({'ERROR'}, f"Armature has {bone_cnt} bones, need 7 for UR")
-            return {'CANCELLED'}
-        if p.robot_type == 'KUKA' and bone_cnt != 8:
-            self.report({'ERROR'}, f"Armature has {bone_cnt} bones, need 8 for KUKA")
-            return {'CANCELLED'}
-
-        set_active_robot(p.robot_type)
-
-        try:
-            re_register_jog_properties()
-            update_jog_properties()
-        except Exception as e:
-            print(f"[ERROR] Jog property registration failed: {e}")
-
-        if ctx.area:
-            ctx.area.tag_redraw()
-
-        self.report({'INFO'}, f"Robot synced to {p.robot_type}")
         return {'FINISHED'}
 
 # ────────────────────────────────────────────────────────────── 
@@ -584,7 +546,6 @@ classes = (
     OBJECT_OT_reindex_tcp_points,
     OBJECT_OT_clear_all_tcp_points,
     OBJECT_OT_snap_goal_to_active,
-    OBJECT_OT_sync_robot_type,
     OBJECT_OT_focus_on_target,
     OBJECT_OT_export_teach_data,
     OBJECT_OT_export_joint_graph_csv,
