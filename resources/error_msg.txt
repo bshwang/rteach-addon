@@ -1,43 +1,49 @@
-[DEBUG] IK operator started
-[DEBUG] Goal object: <bpy_struct, Object("Target_Gizmo") at 0x000002594B1F0820>
-[DEBUG] Armature: KUKA_iiwa14_Arm
-🔧 [solve_and_apply] Start
-→ frame: 128
-→ insert_keyframe: False
-[DEBUG] T_goal:
- [[ 1.00000000e+00  0.00000000e+00  0.00000000e+00 -2.83113003e-01]
- [ 0.00000000e+00  1.00000000e+00  0.00000000e+00  7.59193674e-04]
- [ 0.00000000e+00  0.00000000e+00  1.00000000e+00  1.20286584e+00]
- [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
-[DEBUG] T_base:
- [[1. 0. 0. 0.]
- [0. 1. 0. 0.]
- [0. 0. 1. 0.]
- [0. 0. 0. 1.]]
-[DEBUG] T_offset:
- [[ 7.54979330e-08 -1.00580554e-25  1.00000000e+00  2.41529019e-13]
- [-6.49438170e-16  1.00000000e+00 -1.00892240e-15  3.18603650e-15]
- [-1.00000000e+00  0.00000000e+00  7.54979330e-08 -2.38418522e-07]
- [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
-[DEBUG] T_flange (IK input):
- [[ 7.54979330e-08  7.59362395e-33 -1.00000000e+00 -2.83113241e-01]
- [ 1.00892245e-15  1.00000000e+00 -6.49438094e-16  7.59193674e-04]
- [ 1.00000000e+00  1.00580554e-25  7.54979330e-08  1.20286584e+00]
- [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
-🧩 [IK] Solutions found: 8
-  ▷ sol[0] = [-0.003, -0.804, 0.0, -0.853, 3.142, 0.049, -3.139]
-  ▷ sol[1] = [-0.003, 0.026, 0.0, 0.853, 0.0, 0.826, 0.003]
-  ▷ sol[2] = [3.139, -0.026, 0.0, -0.853, -3.142, 0.826, 0.003]
-  ▷ sol[3] = [3.139, 0.804, 0.0, 0.853, -0.0, 0.049, -3.139]
-  ▷ sol[4] = [3.139, -0.026, 0.0, -0.853, 0.0, -0.826, -3.139]
-  ▷ sol[5] = [-0.003, -0.804, 0.0, -0.853, -0.0, -0.049, 0.003]
-  ▷ sol[6] = [3.139, 0.804, 0.0, 0.853, 3.142, -0.049, 0.003]
-  ▷ sol[7] = [-0.003, 0.026, 0.0, 0.853, -3.142, -0.826, -3.139]
-[DEBUG] Selecting best match to previous q: [-0.0026815835952671563, 0.026392782197377507, 0.0, 0.852789592304025, 2.7526333107073716e-10, 0.8263968856042005, 0.002681583408769228]
-✅ Selected solution index: 1
-[DEBUG] FK result of selected solution:
- [[ 7.54978245e-08 -1.18351509e-15 -1.00000000e+00 -2.83113241e-01]
- [ 1.29995840e-15  1.00000000e+00 -1.18351509e-15  7.59193674e-04]
- [ 1.00000000e+00 -1.30019314e-15  7.54978244e-08  1.20286584e+00]
- [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
-✅ [solve_and_apply] Done
+class OBJECT_OT_teach_pose(bpy.types.Operator):
+    bl_idname = "object.teach_pose"
+    bl_label = "Teach"
+
+    def execute(self, ctx):
+        print("[DEBUG] IK operator started")
+
+        p = ctx.scene.ik_motion_props
+        tgt = p.goal_object
+        print("[DEBUG] Goal object:", tgt)
+        print("[DEBUG] Armature:", p.armature)
+
+        q = tgt.matrix_world.to_quaternion()
+        T_goal = np.eye(4)
+        T_goal[:3, :3] = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
+        T_goal[:3, 3] = np.array(tgt.matrix_world.to_translation())
+
+        q_sel, sols = get_best_ik_solution(p, T_goal)
+        if not sols:
+            p.status_text = "IK failed: no solutions found"
+            return {'FINISHED'}
+
+        p.solutions = [list(map(float, s)) for s in sols]
+        p.max_solutions = len(sols)
+
+        idx = p.solution_index_ui - 1 if 1 <= p.solution_index_ui <= len(sols) else 0
+        if p.use_last_pose:
+            idx = p.current_index if 0 <= p.current_index < len(sols) else idx
+
+        if not (0 <= idx < len(sols)):
+            p.status_text = f"IK failed: invalid solution index {idx}"
+            return {'FINISHED'}
+
+        p.current_index = idx
+        p.solution_index_ui = idx + 1
+        q_sel = p.solutions[idx]
+
+        frame = ctx.scene.frame_current
+        
+        success = solve_and_apply(ctx, p, T_goal, frame, insert_keyframe=False)
+
+        if success:
+            if p.auto_record:
+                bpy.ops.object.record_tcp_point()
+            p.status_text = f"Applied 1/{len(sols)}"
+        else:
+            p.status_text = "IK failed"
+
+        return {'FINISHED'}
