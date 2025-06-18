@@ -78,6 +78,11 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row = box.row()
         icon = 'TRIA_DOWN' if p.show_jog else 'TRIA_RIGHT'
         row.prop(p, "show_jog", icon=icon, text="Robot Jog Mode", emboss=False)
+
+        if not p.robot_type:
+            box.label(text="No robot selected")
+            return
+
         if not p.show_jog:
             return
 
