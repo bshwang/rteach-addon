@@ -4,11 +4,11 @@ import numpy as np
 from math import pi
 from scipy.spatial.transform import Rotation as R
 
-from .robot_presets import ROBOT_CONFIGS
-from .robot_state import get_active_robot
+from rteach.core.robot_presets import ROBOT_CONFIGS
+from rteach.core.robot_state import get_active_robot
 
-from .core_ur import forward_kinematics as fk_ur, inverse_kinematics as ik_ur
-from .core_iiwa import forward_kinematics as fk_kuka, inverse_kinematics_fixed_q3 as ik_kuka
+from rteach.core.core_ur import forward_kinematics as fk_ur, inverse_kinematics as ik_ur
+from rteach.core.core_iiwa import forward_kinematics as fk_kuka, inverse_kinematics_fixed_q3 as ik_kuka
 
 # ──────────────────────────────────────────────
 def get_robot_config():
