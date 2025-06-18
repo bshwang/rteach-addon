@@ -523,7 +523,30 @@ class OBJECT_OT_refresh_stage_sliders(bpy.types.Operator):
 
         self.report({'INFO'}, "Stage sliders refreshed from scene")
         return {'FINISHED'}
-    
+
+class OBJECT_OT_refresh_tcp_list(bpy.types.Operator):
+    bl_idname = "object.refresh_tcp_list"
+    bl_label = "Refresh TCP List"
+
+    def execute(self, ctx):
+        p = ctx.scene.ik_motion_props
+        coll = bpy.data.collections.get("Teach data")
+        if not coll:
+            self.report({'WARNING'}, "Teach data collection not found")
+            return {'CANCELLED'}
+
+        tcp_names = sorted(
+            [ob.name for ob in coll.objects if ob.name.startswith("P.")],
+            key=lambda name: bpy.data.objects[name].get("index", 9999)
+        )
+
+        p.tcp_sorted_list.clear()
+        for name in tcp_names:
+            p.tcp_sorted_list.append(name)
+
+        self.report({'INFO'}, f"{len(tcp_names)} TCPs listed")
+        return {'FINISHED'}
+	    
 # ──────────────────────────────────────────────────────────────   
 classes = (
     OBJECT_OT_clear_path_visuals,
@@ -539,4 +562,5 @@ classes = (
     OBJECT_OT_export_joint_graph_csv,
     OBJECT_OT_clear_robot_system,
     OBJECT_OT_refresh_stage_sliders,
+	OBJECT_OT_refresh_tcp_list,
 )
