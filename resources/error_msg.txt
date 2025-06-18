@@ -1,19 +1,13 @@
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\core\core_iiwa.py", line 23, in inverse_kinematics
-    raise ImportError("❌ kuka_iiwa_ik.pyd is not loaded or solve() is missing.")
-ImportError: ❌ kuka_iiwa_ik.pyd is not loaded or solve() is missing.
-Error: Python: Traceback (most recent call last):
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\ops_teach_main.py", line 38, in execute
-    q_sel, sols = get_best_ik_solution(p, T_goal)
-                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\core\core.py", line 153, in get_best_ik_solution
-    sols = ik_solver(T_flange)
-           ^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\core\core.py", line 48, in <lambda>
-    return lambda T: ik_kuka(T, p.fixed_q3)
-                     ^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\core\core_iiwa.py", line 32, in inverse_kinematics_fixed_q3
-    return inverse_kinematics(T, fixed_q3=q3)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\core\core_iiwa.py", line 23, in inverse_kinematics
-    raise ImportError("??kuka_iiwa_ik.pyd is not loaded or solve() is missing.")
-ImportError: ??kuka_iiwa_ik.pyd is not loaded or solve() is missing.
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Error: Python: Traceback (most recent call last):https://github.com/bshwang/rteach-addon/blob/main/resources/error_msg.txt
+  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\ops_teach_main.py", line 174, in execute
+    q_sel = min(sols, key=_score)
+            ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\ops_teach_main.py", line 171, in _score
+    return sum(abs(stable_ang_diff(q[j], master_q[j]))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\ops_teach_main.py", line 171, in <genexpr>
+    return sum(abs(stable_ang_diff(q[j], master_q[j]))
+                                   ~^^^
+IndexError: index 6 is out of bounds for axis 0 with size 6
+Location: D:\Blender Foundation\Blender 4.3\4.3\scripts\modules\bpy\ops.py:107
