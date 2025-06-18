@@ -16,7 +16,6 @@ def draw_overlay_text():
 
     lines = []
 
-    # A 세트 표시
     if obj:
         lines.append(f"Selected: {obj.name}")
         if p.max_solutions > 0:
@@ -29,10 +28,9 @@ def draw_overlay_text():
     if p.status_text:
         lines.append(f"Status: {p.status_text}")
 
-    # B 세트 표시
     if goal:
         pos = goal.location
-        lines.append(f"Goal: X={pos.x:.1f} Y={pos.y:.1f} Z={pos.z:.1f}")
+        lines.append(f"Goal: X={pos.x * 1000:.1f} Y={pos.y * 1000:.1f} Z={pos.z * 1000:.1f}")
         rot = goal.rotation_euler.to_matrix().to_euler()
         lines.append(f"Rot: RX={degrees(rot.x):.1f}° RY={degrees(rot.y):.1f}° RZ={degrees(rot.z):.1f}°")
 
@@ -46,11 +44,11 @@ def draw_overlay_text():
         if wait is not None:
             lines.append(f"Wait: {wait:.1f} s")
 
-    # 텍스트 출력
     font_id = 0
-    blf.size(font_id, 14)
+    blf.size(font_id, 12)
+
     for i, line in enumerate(lines):
-        blf.position(font_id, 20, region.height - 20 - i * 20, 0)
+        blf.position(font_id, 20, 40 + i * 20, 0)
         blf.draw(font_id, line)
 
 @persistent
