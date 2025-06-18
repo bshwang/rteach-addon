@@ -5,7 +5,7 @@ import numpy as np
 from rteach.core.linear_motion_iiwa import plan_linear_path
 
 try:
-    import rteach.ext.kuka_iiwa_ik  # .pyd
+    import rteach.ext.kuka_iiwa_ik as kuka_iiwa_ik
     has_solver = hasattr(kuka_iiwa_ik, 'solve')
 except Exception as e:
     print(f"⚠️ Failed to load kuka_iiwa_ik.pyd: {e}")
