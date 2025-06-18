@@ -562,5 +562,5 @@ classes = (
     OBJECT_OT_export_joint_graph_csv,
     OBJECT_OT_clear_robot_system,
     OBJECT_OT_refresh_stage_sliders,
-	OBJECT_OT_refresh_tcp_list,
+    OBJECT_OT_refresh_tcp_list,
 )
