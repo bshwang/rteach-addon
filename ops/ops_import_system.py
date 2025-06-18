@@ -1,7 +1,7 @@
 import bpy
 import os
 from bpy.props import EnumProperty
-from .robot_presets import ROBOT_CONFIGS
+from rteach.core.robot_presets import ROBOT_CONFIGS
 
 def get_robot_enum_items():
     return [(k, k, f"Load system: {k}") for k in ROBOT_CONFIGS.keys()]
@@ -22,7 +22,6 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
             self.report({'ERROR'}, f"Preset '{self.system}' not found")
             return {'CANCELLED'}
 
-        # ① 로봇 자산 불러오기
         addon_dir = os.path.dirname(__file__)
         blend_path = os.path.join(addon_dir, "robot_assets", f"{self.system}.blend")
 
@@ -40,7 +39,6 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
             if coll:
                 ctx.scene.collection.children.link(coll)
 
-        # ② 로봇 정보 설정
         p = ctx.scene.ik_motion_props
         p.robot_type = self.system
         p.preset_key = self.system
@@ -51,7 +49,6 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
             p.armature = arm_name
             print(f"[INFO] Armature set to '{arm_name}'")
 
-        # ③ goal/base/tcp/ee 설정
         setup = entry.get("setup_objects", {})
         for key in ["goal", "base", "tcp", "ee"]:
             name = setup.get(key)
