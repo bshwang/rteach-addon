@@ -1,9 +1,7 @@
-#init.py 
-
 bl_info = {
     "name": "Robot Simulator for Blender",
     "author": "Beomsoo Hwang",
-    "version": (1, 0, 3),
+    "version": (1, 0, 4),
     "blender": (4, 3, 0),
     "location": "View3D > Sidebar > IK Solver",
     "description": "UR/KUKA robot motion teaching add-on",
@@ -12,24 +10,26 @@ bl_info = {
 
 import os
 import sys
+import bpy
 
 addon_dir = os.path.dirname(__file__)
 if addon_dir not in sys.path:
     sys.path.append(addon_dir)
 
-import bpy
 from bpy.props import EnumProperty, PointerProperty
+from rteach.core.core import *
+from rteach.ops.ops_teach_main import classes as main_classes
+from rteach.ops.ops_teach_util import classes as util_classes
+from rteach.ui.ui_panel import classes as ui_classes
+from rteach.ops.ops_import_system import OBJECT_OT_import_robot_system
+from rteach.ui import ui_pie
+from rteach.ui import ui_overlay
 
-from .core import *
-from .ops_teach_main import classes as main_classes
-from .ops_teach_util import classes as util_classes
-from .ui_panel import classes as ui_classes
-
-from .settings import IKMotionProperties, JogProperties, TcpItem, StageJogProperties
-from .settings import register_stage_properties, re_register_stage_properties
-from .ops_import_system import OBJECT_OT_import_robot_system, update_jog_properties
-from . import ui_pie
-from . import ui_overlay
+from rteach.config.settings import IKMotionProperties, TcpItem
+from rteach.config.settings_static import (
+    register_static_properties, unregister_static_properties, JogProperties, StageJogProperties
+)
+from rteach.core.robot_presets import ROBOT_CONFIGS
 
 if not hasattr(bpy.types.Object, "motion_enum"):
     bpy.types.Object.motion_enum = EnumProperty(
@@ -41,7 +41,7 @@ if not hasattr(bpy.types.Object, "motion_enum"):
         get=lambda self: self.get("motion_type", "JOINT"),
         set=lambda self, v: self.__setitem__("motion_type", v),
     )
-    
+
 classes = (
     TcpItem,
     StageJogProperties, 
@@ -63,37 +63,6 @@ def register():
 
     ui_pie.register()
     ui_overlay.register()
-
-    try:
-        register_stage_properties({
-            "stage_joints": [
-                {
-                    "name": "placeholder_stage",
-                    "label": "Placeholder",
-                    "type": "location",
-                    "axis": "x",
-                    "min": 0,
-                    "max": 1,
-                    "unit": "mm"
-                }
-            ]
-        })
-    except Exception as e:
-        print(f"[WARNING] register_stage_properties failed during register: {e}")
-
-    try:
-        re_register_stage_properties()
-    except Exception as e:
-        print(f"[WARNING] re_register_stage_properties failed during register: {e}")
-
-    def delayed_jog_update():
-        try:
-            update_jog_properties()
-        except Exception as e:
-            print(f"[WARNING] update_jog_properties (delayed) failed: {e}")
-        return None 
-
-    bpy.app.timers.register(delayed_jog_update, first_interval=0.1)
         
 def unregister():
     for cls in reversed(classes):
@@ -104,5 +73,13 @@ def unregister():
     try:
         ui_pie.unregister()
         ui_overlay.unregister()
+    except:
+        pass
+    try:
+        del bpy.types.Scene.jog_props
+    except:
+        pass
+    try:
+        del bpy.types.Scene.stage_props
     except:
         pass
