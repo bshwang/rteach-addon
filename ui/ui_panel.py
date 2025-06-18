@@ -1,9 +1,9 @@
 import bpy
-from .settings import IKMotionProperties
-from .settings_static import JogProperties, StageJogProperties
-from .robot_state import get_active_robot
-from .core import get_BONES, get_armature_bones, get_joint_limits
-from .robot_presets import ROBOT_CONFIGS
+from rteach.config.settings import IKMotionProperties
+from rteach.config.settings_static import JogProperties, StageJogProperties
+from rteach.core.robot_state import get_active_robot
+from rteach.core.core import get_BONES, get_joint_limits
+from rteach.core.robot_presets import ROBOT_CONFIGS
 
 class UI_UL_tcp_list(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
@@ -36,7 +36,6 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         p = ctx.scene.ik_motion_props
         row = L.row(align=True)
         row.prop(p, "robot_type", text="")
-        row.operator("object.sync_robot_type", text="", icon='FILE_REFRESH')
         row.operator("object.import_robot_system", text="", icon='APPEND_BLEND')
         row.operator("object.clear_robot_system", text="", icon='TRASH')
 
@@ -83,7 +82,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             return
 
         jog = ctx.scene.jog_props
-        bones = get_armature_bones()
+        bones = get_BONES()
         limits = get_joint_limits()
         
         expected_dof = len(bones)
