@@ -21,7 +21,7 @@ def get_BONES():
     axes = config.get("axes")
     if axes:
         return [f"j{i+1}" for i in range(len(axes))]
-    raise ValueError(f"[get_BONES] Unknown or misconfigured robot_type: {getattr(bpy.context.scene.ik_motion_props, 'robot_type', '')}")
+    return [] 
 
 def get_AXES():
     config = get_robot_config()
