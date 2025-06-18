@@ -2,10 +2,10 @@ import os
 import sys
 import numpy as np
 
-from .linear_motion_iiwa import plan_linear_path
+from rteach.core.linear_motion_iiwa import plan_linear_path
 
 try:
-    import kuka_iiwa_ik  # .pyd
+    import rteach.ext.kuka_iiwa_ik  # .pyd
     has_solver = hasattr(kuka_iiwa_ik, 'solve')
 except Exception as e:
     print(f"⚠️ Failed to load kuka_iiwa_ik.pyd: {e}")
@@ -13,7 +13,7 @@ except Exception as e:
     has_solver = False
 
 try:
-    from kuka_iiwa_ik_generated import kuka_iiwa_fk as fk_py
+    from rteach.ext.kuka_iiwa_ik_generated import kuka_iiwa_fk as fk_py
 except Exception as e:
     print(f"⚠️ Failed to load kuka_iiwa_ik_generated.py: {e}")
     fk_py = None
