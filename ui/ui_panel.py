@@ -174,10 +174,9 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             op.name = p.selected_teach_point.name
         else:
             row.operator("object.tcp_delete", text="", icon='X') 
-
+        row.operator("object.refresh_tcp_list", text="🔄 Refresh TCP List", icon="FILE_REFRESH")
         row.operator("object.update_tcp_pose", text="Pose Update", icon='EXPORT')
         row.operator("object.recompute_selected_tcp", text="Recompute", icon='CON_ROTLIKE')
-
 
         row = box.row(align=True)
         row.prop(p, "selected_teach_point", text="Selected")
