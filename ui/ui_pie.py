@@ -3,30 +3,38 @@ from bpy.app.handlers import persistent
 
 addon_keymaps = []
 
-# ──────────────────────────────
-# PIE MENU CLASSES
-# ──────────────────────────────
-
+# ──────────────────────────────────────────────────────────────
+# Pie Menu: Target Pose "Q"
+# ──────────────────────────────────────────────────────────────
 class VIEW3D_MT_robot_target_pie(bpy.types.Menu):
-    bl_label = "Target Pose Pie"
+    bl_label = "Target Gizmo Menu"
     bl_idname = "VIEW3D_MT_robot_target_pie"
 
     def draw(self, context):
         pie = self.layout.menu_pie()
-        pie.operator("object.focus_on_target", text="Select Target", icon='RESTRICT_SELECT_OFF')
-        pie.operator("object.snap_goal_to_active", text="Snap Target", icon='PIVOT_ACTIVE')
+        pie.operator("object.focus_on_target", text="Select", icon='RESTRICT_SELECT_OFF')
+        pie.operator("object.snap_target_to_fk", text="Snap to FK Position", icon='CONSTRAINT')
+        pie.operator("object.setup_tcp_from_gizmo", text="Set as TCP offset", icon='EMPTY_ARROWS')
+        pie.operator("object.snap_goal_to_active", text="Snap to Active", icon='PIVOT_ACTIVE')
 
+# ──────────────────────────────────────────────────────────────
+# Pie Menu: Jog Mode "Shift Q"
+# ──────────────────────────────────────────────────────────────
 class VIEW3D_MT_robot_jog_pie(bpy.types.Menu):
-    bl_label = "Jog Mode Pie"
+    bl_label = "Jog Mode"
     bl_idname = "VIEW3D_MT_robot_jog_pie"
 
     def draw(self, context):
         pie = self.layout.menu_pie()
         pie.operator("object.keyframe_joint_pose", text="Keyframe Pose", icon='KEY_HLT')
         pie.operator("object.record_tcp_from_jog", text="Record TCP", icon='EMPTY_AXIS')
+        pie.operator("object.go_home_pose", text="Home Position", icon='HOME')
 
+# ──────────────────────────────────────────────────────────────
+# Pie Menu: Step 1 (Teach) "Ctrl Q"
+# ──────────────────────────────────────────────────────────────
 class VIEW3D_MT_robot_step1_pie(bpy.types.Menu):
-    bl_label = "Teach Step Pie"
+    bl_label = "Teach Menu"
     bl_idname = "VIEW3D_MT_robot_step1_pie"
 
     def draw(self, context):
@@ -68,7 +76,7 @@ def _delayed_keymap_registration(dummy=None):
     addon_keymaps.clear()
     addon_keymaps.extend([(km, [kmi1, kmi2, kmi3])])
     print("[PieMenu] Keymaps registered")
-    return None
+    return None  # stop retrying
 
 def register():
     for cls in classes:
