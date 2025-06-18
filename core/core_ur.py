@@ -1,6 +1,6 @@
 import numpy as np
-from ur_analytic_ik_ext import ur16e, ur5e
-from .robot_state import get_active_robot
+from rteach.ext.ur_analytic_ik_ext import ur16e, ur5e
+from rteach.core.robot_state import get_active_robot
 
 def _get_solver():
     robot = get_active_robot().upper()
