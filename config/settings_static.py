@@ -1,6 +1,6 @@
 import bpy
 import math
-from .robot_presets import ROBOT_CONFIGS
+from rteach.core.robot_presets import ROBOT_CONFIGS
 
 MAX_JOINTS = 8
 
@@ -55,11 +55,9 @@ def create_stage_getter(obj_name, axis, unit, joint_type):
         if not obj: return 0.0
         idx = {"x":0, "y":1, "z":2}[axis.lower()]
         if joint_type == "rotation":
-            val = obj.rotation_euler[idx]
-            return math.degrees(val) if unit == "deg" else val
+            return obj.rotation_euler[idx]
         else:
-            val = obj.location[idx]
-            return val  # ✅ mm 그대로 반환 (Blender 내부는 m, UI에서는 mm로 보여줌)
+            return obj.location[idx]  
     return getter
 
 def create_stage_setter(obj_name, axis, unit, joint_type):
@@ -68,15 +66,9 @@ def create_stage_setter(obj_name, axis, unit, joint_type):
         if not obj: return
         idx = {"x":0, "y":1, "z":2}[axis.lower()]
         if joint_type == "rotation":
-            val = math.radians(value) if unit == "deg" else value
-            rot = list(obj.rotation_euler)
-            rot[idx] = val
-            obj.rotation_euler = rot
+            obj.rotation_euler[idx] = value
         else:
-            val = value / 1000.0 if unit == "mm" else value
-            loc = list(obj.location)
-            loc[idx] = val
-            obj.location = loc
+            obj.location[idx] = value
         bpy.context.view_layer.update()
     return setter
 
@@ -88,9 +80,8 @@ for config in ROBOT_CONFIGS.values():
     for joint in config.get("stage_joints", []):
         key, label, unit, min_val, max_val, axis, joint_type = joint
         if key in StageJogProperties.__annotations__:
-            continue  # 중복 방지
-
-        # ✅ 단위 변환 적용 (min/max → Blender 내부 단위 기준)
+            continue  
+        
         if unit == "mm":
             min_val /= 1000.0
             max_val /= 1000.0
