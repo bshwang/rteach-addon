@@ -10,7 +10,7 @@ from rteach.config.settings import IKMotionProperties
 from rteach.core.robot_state import get_active_robot, set_active_robot
 from rteach.core.core import (
     apply_solution, get_inverse_kinematics, compute_base_matrix, 
-    compute_tcp_offset_matrix, get_forward_kinematics, 
+    compute_tcp_offset_matrix, get_forward_kinematics, solve_and_apply,
     sort_solutions, get_BONES, get_AXES, get_best_ik_solution
 )
 from rteach.ops.ops_teach_util import update_tcp_sorted_list
@@ -35,44 +35,49 @@ class OBJECT_OT_teach_pose(bpy.types.Operator):
         T_goal[:3, :3] = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
         T_goal[:3, 3] = np.array(tgt.matrix_world.to_translation())
 
-        q_sel, sols = get_best_ik_solution(p, T_goal)
+        ik_solver = get_inverse_kinematics(p)
+        T_base = compute_base_matrix(p)
+        T_offset = compute_tcp_offset_matrix(p)
+        T_flange = np.linalg.inv(T_base) @ T_goal @ np.linalg.inv(T_offset)
+        sols = ik_solver(T_flange)
+
+        print(f"[DEBUG] Direct IK returned {len(sols)} solutions:")
+        for i, s in enumerate(sols):
+            print(f"  sol[{i}] = {[round(a, 3) for a in s]}")
+
         if not sols:
             p.status_text = "IK failed: no solutions found"
             return {'FINISHED'}
 
+        q_prev = p.solutions[p.current_index] if p.solutions and len(p.solutions) > p.current_index else None
+        if q_prev:
+            def ang_diff(a, b):
+                return ((a - b + math.pi) % (2 * math.pi)) - math.pi
+            idx = min(range(len(sols)), key=lambda i: sum(abs(ang_diff(sols[i][j], q_prev[j])) for j in range(len(q_prev))))
+        else:
+            idx = 0
+
         p.solutions = [list(map(float, s)) for s in sols]
         p.max_solutions = len(sols)
-
-        idx = p.solution_index_ui - 1 if 1 <= p.solution_index_ui <= len(sols) else 0
-        if p.use_last_pose:
-            idx = p.current_index if 0 <= p.current_index < len(sols) else idx
-
-        if not (0 <= idx < len(sols)):
-            p.status_text = f"IK failed: invalid solution index {idx}"
-            return {'FINISHED'}
-
         p.current_index = idx
         p.solution_index_ui = idx + 1
         q_sel = p.solutions[idx]
 
         frame = ctx.scene.frame_current
         arm = bpy.data.objects.get(p.armature)
-        if arm:
-            apply_solution(arm, q_sel, frame, insert_keyframe=False)
-            success = True
-        else:
-            p.status_text = "IK failed: armature not found"
+        if not arm:
+            p.status_text = "IK failed: Armature not found"
             return {'FINISHED'}
 
-        if success:
-            if p.auto_record:
-                bpy.ops.object.record_tcp_point()
-            p.status_text = f"Applied {idx+1}/{len(sols)}"
-        else:
-            p.status_text = "IK failed"
+        apply_solution(arm, q_sel, frame, insert_keyframe=False)
+
+        if p.auto_record:
+            bpy.ops.object.record_tcp_point()
+
+        p.status_text = f"Applied {idx+1}/{len(sols)}"
 
         return {'FINISHED'}
-
+    
 # ──────────────────────────────────────────────────────────────
 class OBJECT_OT_execute_linear_motion(bpy.types.Operator):
     bl_idname = "object.execute_linear_motion"
@@ -242,29 +247,19 @@ class OBJECT_OT_cycle_pose_preview(bpy.types.Operator):
 
     def execute(self, ctx):
         p = ctx.scene.ik_motion_props
-        tgt = p.goal_object
         arm = bpy.data.objects.get(p.armature)
+        tgt = p.goal_object
 
         if not tgt:
             self.report({'ERROR'}, "Target not set")
             return {'CANCELLED'}
 
-        bpy.context.view_layer.update()
-        bpy.context.evaluated_depsgraph_get().update()
-
-        q = tgt.matrix_world.to_quaternion()
-        T_goal = np.eye(4)
-        T_goal[:3, :3] = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
-        T_goal[:3, 3]  = np.array(tgt.matrix_world.to_translation())
-
-        _, sols = get_best_ik_solution(p, T_goal)
+        sols = p.solutions
         if not sols:
-            self.report({'WARNING'}, "No IK solutions")
+            self.report({'WARNING'}, "No IK solutions stored")
             return {'CANCELLED'}
 
-        p.solutions = [list(map(float, s)) for s in sols]
-        count = len(p.solutions)
-
+        count = len(sols)
         idx = p.current_index
         if self.direction == 'NEXT':
             idx = (idx + 1) % count
@@ -273,7 +268,7 @@ class OBJECT_OT_cycle_pose_preview(bpy.types.Operator):
 
         p.current_index = idx
         p.solution_index_ui = idx + 1
-        q_sel = p.solutions[idx]
+        q_sel = sols[idx]
         p.ik_solution_str = str([round(math.degrees(x), 1) for x in q_sel])
 
         if arm:
