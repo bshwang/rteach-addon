@@ -1,6 +1,6 @@
 [Bake] P.000 → P.001 | LINEAR | Dist 109.0 mm, Speed 100.0 mm/s → 27 frames
 [Move_L] Start Frame = 1
-[Move_L] f1: Applying src joint_pose = [-0.1739 -0.8629  0.2618 -1.5262 -0.0562  0.7017  0.2376]
+[Move_L] f1: Using pose index = 1
 [Move_L] f2: Using pose index = 2
 [Move_L] f3: Using pose index = 2
 [Move_L] f4: Using pose index = 2
