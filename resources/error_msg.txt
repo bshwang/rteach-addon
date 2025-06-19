@@ -1,11 +1,12 @@
-Error: Python: Traceback (most recent call last):
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\ops_teach_main.py", line 56, in execute
-    idx = min(range(len(sols)), key=lambda i: sum(abs(ang_diff(sols[i][j], q_prev[j])) for j in range(len(q_prev))))
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\ops_teach_main.py", line 56, in <lambda>
-    idx = min(range(len(sols)), key=lambda i: sum(abs(ang_diff(sols[i][j], q_prev[j])) for j in range(len(q_prev))))
-                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\ops_teach_main.py", line 56, in <genexpr>
-    idx = min(range(len(sols)), key=lambda i: sum(abs(ang_diff(sols[i][j], q_prev[j])) for j in range(len(q_prev))))
-                                                               ~~~~~~~^^^
+RuntimeError: Error: Python: Traceback (most recent call last):
+  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\ops_teach_main.py", line 179, in execute
+    q_sel = min(sols, key=_score)
+            ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\ops_teach_main.py", line 176, in _score
+    return sum(abs(stable_ang_diff(q[j], master_q[j]))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\ops_teach_main.py", line 176, in <genexpr>
+    return sum(abs(stable_ang_diff(q[j], master_q[j]))
+                                   ~^^^
 IndexError: index 6 is out of bounds for axis 0 with size 6
+Location: D:\Blender Foundation\Blender 4.3\4.3\scripts\modules\bpy\ops.py:107
