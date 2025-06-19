@@ -542,7 +542,8 @@ class OBJECT_OT_refresh_tcp_list(bpy.types.Operator):
 
         p.tcp_sorted_list.clear()
         for name in tcp_names:
-            p.tcp_sorted_list.append(name)
+            item = p.tcp_sorted_list.add()
+            item.name = name
 
         self.report({'INFO'}, f"{len(tcp_names)} TCPs listed")
         return {'FINISHED'}
