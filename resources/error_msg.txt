@@ -1,8 +1,5 @@
-AttributeError: 'Scene' object has no attribute 'jog_props'
 Traceback (most recent call last):
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ui\ui_panel.py", line 28, in draw
-    self.draw_jog_section(L, ctx)
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ui\ui_panel.py", line 91, in draw_jog_section
-    jog = ctx.scene.jog_props
-          ^^^^^^^^^^^^^^^^^^^
-AttributeError: 'Scene' object has no attribute 'jog_props'
+  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ui\ui_overlay.py", line 17, in draw_overlay_text
+    obj = p.selected_teach_point
+          ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'IKMotionProperties' object has no attribute 'selected_teach_point'
