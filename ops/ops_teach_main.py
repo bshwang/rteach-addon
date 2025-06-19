@@ -53,7 +53,7 @@ class OBJECT_OT_teach_pose(bpy.types.Operator):
         if q_prev:
             def ang_diff(a, b):
                 return ((a - b + math.pi) % (2 * math.pi)) - math.pi
-            idx = min(range(len(sols)), key=lambda i: sum(abs(ang_diff(sols[i][j], q_prev[j])) for j in range(len(q_prev))))
+            idx = min(range(len(sols)),key=lambda i: sum(abs(ang_diff(sols[i][j], q_prev[j])) for j in range(min(len(sols[i]), len(q_prev)))))
         else:
             idx = 0
 
@@ -105,8 +105,8 @@ class OBJECT_OT_execute_linear_motion(bpy.types.Operator):
 
         frame0   = ctx.scene.frame_current
 
-        # ① KUKA + High-Precision LIN 
-        if robot == "KUKA" and p.precise_linear and src.get("joint_pose"):
+        # ① iiwa14 + High-Precision LIN 
+        if robot == "iiwa14" and p.precise_linear and src.get("joint_pose"):
             q_init   = np.array(src["joint_pose"], float)
             T_goal   = np.linalg.inv(compute_base_matrix(p)) @ \
                        np.array(dst.matrix_world) @ \
@@ -128,7 +128,7 @@ class OBJECT_OT_execute_linear_motion(bpy.types.Operator):
                              [q_end.x,   q_end.y,   q_end.z,   q_end.w]])
         slerp = Slerp([0, 1], R_key)
 
-        if robot == "KUKA":
+        if robot == "iiwa14":
             q3_start = src.get("joint_pose", [0.0]*3)[2]
             q3_end   = dst.get("joint_pose", [0.0]*3)[2]
 
@@ -146,7 +146,7 @@ class OBJECT_OT_execute_linear_motion(bpy.types.Operator):
             t_val = i / (steps - 1) if steps > 1 else 0.0
             T_goal[:3, :3] = slerp([t_val])[0].as_matrix()
 
-            if robot == "KUKA":
+            if robot == "iiwa14":
                 p.fixed_q3 = (1.0 - t_val) * q3_start + t_val * q3_end
 
             T_flange = (
@@ -171,10 +171,13 @@ class OBJECT_OT_execute_linear_motion(bpy.types.Operator):
                 else:
                     master_q = np.array(sols[0], float)
 
+                if len(master_q) != len(sols[0]):
+                    print(f"[WARN] master_q DOF mismatch: {len(master_q)} vs {len(sols[0])}")
+                    master_q = np.array(sols[0], float)
+
             def _score(q):
-                q = np.asarray(q)
                 return sum(abs(stable_ang_diff(q[j], master_q[j]))
-                           for j in range(len(master_q)))
+                        for j in range(min(len(q), len(master_q))))
 
             q_sel = min(sols, key=_score)
             if i == steps - 1 and dst.get("joint_pose"):
@@ -329,7 +332,7 @@ class OBJECT_OT_apply_preview_pose(bpy.types.Operator):
         obj["joint_pose"] = list(map(float, q_sel))
         obj["solution_index"] = p.current_index
 
-        if get_active_robot() == "KUKA":
+        if get_active_robot() == "iiwa14":
             obj["fixed_q3"] = p.fixed_q3
 
         p.status_text = f"Keyframed {p.current_index+1}/{len(p.solutions)}"
@@ -409,7 +412,7 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
 
                 robot = get_active_robot()
 
-                if robot == "KUKA" and p.precise_linear:
+                if robot == "iiwa14" and p.precise_linear:
                     q_start_raw = tp.get("joint_pose")
                     q_start = np.asarray(q_start_raw, float) if q_start_raw else None
 
@@ -454,7 +457,7 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
                     else:
                         self.report({'WARNING'}, f"[Bake] joint_pose missing in {tp.name}")
 
-                if robot == "KUKA":
+                if robot == "iiwa14":
                     p.fixed_q3 = float(tp.get("fixed_q3", p.fixed_q3))
 
                 p.goal_object   = giz
@@ -536,7 +539,7 @@ class OBJECT_OT_update_tcp_pose(bpy.types.Operator):
             obj["solution_index"] = found_index
             obj["joint_pose"]     = q_sel.tolist()
 
-            if get_active_robot() == "KUKA":
+            if get_active_robot() == "iiwa14":
                 p.fixed_q3 = q_sel[2]
                 obj["fixed_q3"] = p.fixed_q3
 
@@ -551,7 +554,7 @@ class OBJECT_OT_update_tcp_pose(bpy.types.Operator):
             if "joint_pose" in obj:
                 q_stored = obj["joint_pose"]
                 apply_solution(arm, q_stored, ctx.scene.frame_current, insert_keyframe=False)
-                if get_active_robot() == "KUKA":
+                if get_active_robot() == "iiwa14":
                     p.fixed_q3 = q_stored[2]
                 p.current_index     = int(obj.get("solution_index", 0))
                 p.solution_index_ui = p.current_index + 1
@@ -757,8 +760,16 @@ class OBJECT_OT_snap_gizmo_on_path(bpy.types.Operator):
             arm = bpy.data.objects.get(p.armature)
             if arm:
                 apply_solution(arm, q_sel, ctx.scene.frame_current, insert_keyframe=False)
-                p.current_index = sols.index(q_sel)
-                p.solution_index_ui = p.current_index + 1
+
+                found_index = None
+                for i, s in enumerate(sols):
+                    if np.allclose(s, q_sel, atol=1e-6):
+                        found_index = i
+                        break
+
+                if found_index is not None:
+                    p.current_index = found_index
+                    p.solution_index_ui = found_index + 1
 
         p.status_text = f"Gizmo moved to {round(t*100)}% between {tp_a.name} and {tp_b.name}"
         return {'FINISHED'}
@@ -935,7 +946,7 @@ class OBJECT_OT_recompute_selected_tcp(bpy.types.Operator):
             obj["joint_pose"] = q_sel.tolist()
             obj["solution_index"] = sols.index(q_sel) if q_sel in sols else 0
 
-            if get_active_robot() == "KUKA":
+            if get_active_robot() == "iiwa14":
                 obj["fixed_q3"] = q_sel[2]
 
             count += 1
@@ -1092,7 +1103,7 @@ class OBJECT_OT_setup_tcp_from_gizmo(bpy.types.Operator):
 
         v_local = ee_mat.inverted() @ tgt_loc   
 
-        if robot == "KUKA":
+        if robot == "iiwa14":
             R_corr3    = Euler((0, math.radians(90), 0), 'XYZ').to_matrix()
             v_corr     = R_corr3 @ v_local
             final_rot3 = tgt_rot3 @ R_corr3
@@ -1120,7 +1131,26 @@ class OBJECT_OT_setup_tcp_from_gizmo(bpy.types.Operator):
         p.tcp_object = tcp_real
         self.report({'INFO'}, f"TCP pair created (rotation offset disabled for UR)")
         return {'FINISHED'}
+    
+# ──────────────────────────────────────────────────────────────  
+class OBJECT_OT_sync_robot_type(bpy.types.Operator):
+    bl_idname = "object.sync_robot_type"
+    bl_label = "Sync Robot Type"
 
+    def execute(self, ctx):
+        from rteach.config import settings_static as ss
+        from rteach.core.robot_state import get_active_robot
+
+        robot = get_active_robot()
+        print(f"[DEBUG] Syncing JogProperties for robot: {robot}")
+
+        ss.unregister_static_properties()
+        ss.register_static_properties(robot)
+        bpy.utils.register_class(ss.JogProperties)
+        bpy.types.Scene.jog_props = bpy.props.PointerProperty(type=ss.JogProperties)
+
+        return {'FINISHED'}
+    
 # ──────────────────────────────────────────────────────────────    
 classes = (
     OBJECT_OT_teach_pose,
@@ -1146,4 +1176,5 @@ classes = (
     OBJECT_OT_snap_target_to_fk,
     OBJECT_OT_go_home_pose,
     OBJECT_OT_setup_tcp_from_gizmo,
+    OBJECT_OT_sync_robot_type,
 )
