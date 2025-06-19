@@ -1,31 +1,11 @@
-class OBJECT_OT_cycle_pose_preview(bpy.types.Operator):
-    bl_idname = "object.cycle_pose_preview"
-    bl_label = "Cycle IK"
-
-    direction: bpy.props.EnumProperty(
-        items=[('NEXT','Next',''),('PREV','Prev','')]
-    )
-
-    def execute(self, ctx):
-        p = ctx.scene.ik_motion_props
-        arm = bpy.data.objects.get(p.armature)
-
-        if not p.solutions or len(p.solutions) < 2:
-            self.report({'WARNING'}, "No existing IK solutions to cycle")
-            return {'CANCELLED'}
-
-        count = len(p.solutions)
-        idx = p.current_index
-        idx = (idx + 1) % count if self.direction == 'NEXT' else (idx - 1 + count) % count
-
-        p.current_index = idx
-        p.solution_index_ui = idx + 1
-        q_sel = p.solutions[idx]
-        p.ik_solution_str = str([round(math.degrees(x), 1) for x in q_sel])
-
-        if arm:
-            frame = ctx.scene.frame_current
-            apply_solution(arm, q_sel, frame, insert_keyframe=False)
-
-        p.status_text = f"Pose {idx+1}/{count} previewed"
-        return {'FINISHED'}
+Error: Python: Traceback (most recent call last):
+  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\ops_teach_main.py", line 56, in execute
+    idx = min(range(len(sols)), key=lambda i: sum(abs(ang_diff(sols[i][j], q_prev[j])) for j in range(len(q_prev))))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\ops_teach_main.py", line 56, in <lambda>
+    idx = min(range(len(sols)), key=lambda i: sum(abs(ang_diff(sols[i][j], q_prev[j])) for j in range(len(q_prev))))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\ops_teach_main.py", line 56, in <genexpr>
+    idx = min(range(len(sols)), key=lambda i: sum(abs(ang_diff(sols[i][j], q_prev[j])) for j in range(len(q_prev))))
+                                                               ~~~~~~~^^^
+IndexError: index 6 is out of bounds for axis 0 with size 6
