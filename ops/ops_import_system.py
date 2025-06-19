@@ -2,6 +2,7 @@ import bpy
 import os
 from bpy.props import EnumProperty
 from rteach.core.robot_presets import ROBOT_CONFIGS
+from rteach.config.settings_static import register_static_properties, unregister_static_properties
 
 def get_robot_enum_items():
     return [(k, k, f"Load system: {k}") for k in ROBOT_CONFIGS.keys()]
@@ -62,11 +63,16 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
                     print(f"[SKIP] {key}_object '{name}' is not in 'Setup' collection")
 
         self.report({'INFO'}, f"Imported system: {self.system}")
+
+        unregister_static_properties()
+        register_static_properties()
+        print("[DEBUG] JogProperties re-registered after robot import")
+
         return {'FINISHED'}
 
     def invoke(self, ctx, event):
         return ctx.window_manager.invoke_props_dialog(self)
-
+    
 def register():
     bpy.utils.register_class(OBJECT_OT_import_robot_system)
 
