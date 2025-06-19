@@ -38,6 +38,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row.prop(p, "robot_type", text="")
         row.operator("object.import_robot_system", text="", icon='APPEND_BLEND')
         row.operator("object.clear_robot_system", text="", icon='TRASH')
+        row.prop(p, "show_overlay", text="", toggle=True, icon='OVERLAY')
 
     def draw_setup_section(self, L, ctx):
         p = ctx.scene.ik_motion_props
