@@ -1,102 +1,56 @@
-class OBJECT_OT_execute_linear_motion(bpy.types.Operator):
-    bl_idname = "object.execute_linear_motion"
-    bl_label  = "Move_L"
-
-    DEBUG_MOVE_L = True
-
-    def execute(self, ctx):
-        p = ctx.scene.ik_motion_props
-        src, dst = p.goal_object, p.linear_target
-        if not (src and dst):
-            p.status_text = "Linear source/target not set"
-            return {'FINISHED'}
-
-        M_start, M_end = map(np.array, (src.matrix_world, dst.matrix_world))
-        steps      = max(1, int(p.linear_frames))
-        pos_series = np.linspace(M_start[:3, 3], M_end[:3, 3], steps)
-
-        robot      = get_active_robot()
-        arm        = bpy.data.objects.get(p.armature)
-        if not arm:
-            self.report({'ERROR'}, "Armature not found")
-            return {'CANCELLED'}
-
-        frame0     = ctx.scene.frame_current
-        ik_solver  = get_inverse_kinematics(p)
-        pose_index = p.current_index
-
-        if robot == "KUKA":
-            q3_start = src.get("joint_pose", [0.0]*3)[2]
-            q3_end   = dst.get("joint_pose", [0.0]*3)[2]
-
-        q_start, q_end = src.matrix_world.to_quaternion(), dst.matrix_world.to_quaternion()
-        R_key = R.from_quat([[q_start.x, q_start.y, q_start.z, q_start.w],
-                             [q_end.x,   q_end.y,   q_end.z,   q_end.w]])
-        slerp = Slerp([0, 1], R_key)
-
-        master_q = None
-        success = 0
-
-        def stable_ang_diff(a, b):
-            return ((a - b + math.pi) % (2 * math.pi)) - math.pi
-
-        for i in range(steps):
-            T_goal = np.eye(4)
-            T_goal[:3, 3] = pos_series[i]
-            t_val = i / (steps - 1) if steps > 1 else 0.0
-            T_goal[:3, :3] = slerp([t_val])[0].as_matrix()
-
-            if robot == "KUKA":
-                p.fixed_q3 = (1.0 - t_val) * q3_start + t_val * q3_end
-
-            T_flange = (
-                np.linalg.inv(compute_base_matrix(p)) @
-                T_goal @
-                np.linalg.inv(compute_tcp_offset_matrix(p))
-            )
-            U, _, Vt = np.linalg.svd(T_flange[:3, :3])
-            T_flange[:3, :3] = U @ Vt
-
-            sols = ik_solver(T_flange)
-            if not sols:
-                if self.DEBUG_MOVE_L:
-                    print(f"[Move_L] f{frame0+i}: IK failed")
-                continue
-
-            if self.DEBUG_MOVE_L:
-                print(f"[Move_L] f{frame0+i}: {len(sols)} IK solutions found")
-
-            if i == 0 and src.get("joint_pose"):
-                q_sel = np.array(src["joint_pose"], float)
-                print(f"[Move_L] f{frame0+i}: Using src joint_pose")
-            elif i == steps - 1 and dst.get("joint_pose"):
-                q_sel = np.array(dst["joint_pose"], float)
-                print(f"[Move_L] f{frame0+i}: Using dst joint_pose")
-            elif len(sols) > pose_index:
-                q_sel = np.array(sols[pose_index], float)
-                print(f"[Move_L] f{frame0+i}: Using pose index {pose_index + 1}")
-            else:
-                if master_q is None:
-                    master_q = np.array(sols[0], float)
-                def _score(q):
-                    q = np.asarray(q)
-                    return sum(abs(stable_ang_diff(q[j], master_q[j])) for j in range(len(master_q)))
-                q_sel = min(sols, key=_score)
-                print(f"[Move_L] f{frame0+i}: Fallback to best match (index unknown)")
-
-            master_q = q_sel
-            ctx.scene.frame_set(frame0 + i)
-            apply_solution(arm, q_sel, frame0 + i, insert_keyframe=True)
-            success += 1
-
-        if p.goal_object and master_q is not None:
-            fk_func = get_forward_kinematics()
-            T_last = (
-                compute_base_matrix(p) @
-                fk_func(master_q) @
-                compute_tcp_offset_matrix(p)
-            )
-            p.goal_object.matrix_world = Matrix(T_last)
-
-        p.status_text = f"Fast LIN done ({success}/{steps})"
-        return {'FINISHED'}
+[Bake] P.000 → P.001 | LINEAR | Dist 109.0 mm, Speed 100.0 mm/s → 27 frames
+[Move_L] f2: 8 IK solutions found
+[Move_L] f2: Using src joint_pose
+[Move_L] f3: 8 IK solutions found
+[Move_L] f3: Using pose index 2
+[Move_L] f4: 8 IK solutions found
+[Move_L] f4: Using pose index 2
+[Move_L] f5: 8 IK solutions found
+[Move_L] f5: Using pose index 2
+[Move_L] f6: 8 IK solutions found
+[Move_L] f6: Using pose index 2
+[Move_L] f7: 8 IK solutions found
+[Move_L] f7: Using pose index 2
+[Move_L] f8: 8 IK solutions found
+[Move_L] f8: Using pose index 2
+[Move_L] f9: 8 IK solutions found
+[Move_L] f9: Using pose index 2
+[Move_L] f10: 8 IK solutions found
+[Move_L] f10: Using pose index 2
+[Move_L] f11: 8 IK solutions found
+[Move_L] f11: Using pose index 2
+[Move_L] f12: 8 IK solutions found
+[Move_L] f12: Using pose index 2
+[Move_L] f13: 8 IK solutions found
+[Move_L] f13: Using pose index 2
+[Move_L] f14: 8 IK solutions found
+[Move_L] f14: Using pose index 2
+[Move_L] f15: 8 IK solutions found
+[Move_L] f15: Using pose index 2
+[Move_L] f16: 8 IK solutions found
+[Move_L] f16: Using pose index 2
+[Move_L] f17: 8 IK solutions found
+[Move_L] f17: Using pose index 2
+[Move_L] f18: 8 IK solutions found
+[Move_L] f18: Using pose index 2
+[Move_L] f19: 8 IK solutions found
+[Move_L] f19: Using pose index 2
+[Move_L] f20: 8 IK solutions found
+[Move_L] f20: Using pose index 2
+[Move_L] f21: 8 IK solutions found
+[Move_L] f21: Using pose index 2
+[Move_L] f22: 8 IK solutions found
+[Move_L] f22: Using pose index 2
+[Move_L] f23: 8 IK solutions found
+[Move_L] f23: Using pose index 2
+[Move_L] f24: 8 IK solutions found
+[Move_L] f24: Using pose index 2
+[Move_L] f25: 8 IK solutions found
+[Move_L] f25: Using pose index 2
+[Move_L] f26: 8 IK solutions found
+[Move_L] f26: Using pose index 2
+[Move_L] f27: 8 IK solutions found
+[Move_L] f27: Using pose index 2
+[Move_L] f28: 8 IK solutions found
+[Move_L] f28: Using dst joint_pose
+Info: Bake finished
