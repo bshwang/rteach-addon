@@ -247,19 +247,29 @@ class OBJECT_OT_cycle_pose_preview(bpy.types.Operator):
 
     def execute(self, ctx):
         p = ctx.scene.ik_motion_props
-        arm = bpy.data.objects.get(p.armature)
         tgt = p.goal_object
+        arm = bpy.data.objects.get(p.armature)
 
         if not tgt:
             self.report({'ERROR'}, "Target not set")
             return {'CANCELLED'}
 
-        sols = p.solutions
+        bpy.context.view_layer.update()
+        bpy.context.evaluated_depsgraph_get().update()
+
+        q = tgt.matrix_world.to_quaternion()
+        T_goal = np.eye(4)
+        T_goal[:3, :3] = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
+        T_goal[:3, 3]  = np.array(tgt.matrix_world.to_translation())
+
+        _, sols = get_best_ik_solution(p, T_goal)
         if not sols:
-            self.report({'WARNING'}, "No IK solutions stored")
+            self.report({'WARNING'}, "No IK solutions")
             return {'CANCELLED'}
 
-        count = len(sols)
+        p.solutions = [list(map(float, s)) for s in sols]
+        count = len(p.solutions)
+
         idx = p.current_index
         if self.direction == 'NEXT':
             idx = (idx + 1) % count
@@ -268,7 +278,7 @@ class OBJECT_OT_cycle_pose_preview(bpy.types.Operator):
 
         p.current_index = idx
         p.solution_index_ui = idx + 1
-        q_sel = sols[idx]
+        q_sel = p.solutions[idx]
         p.ik_solution_str = str([round(math.degrees(x), 1) for x in q_sel])
 
         if arm:
