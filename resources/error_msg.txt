@@ -1,11 +1,11 @@
-[DEBUG] Using UR16E solver
-Traceback (most recent call last):
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\ops_teach_main.py", line 763, in execute
-    p.current_index = sols.index(q_sel)
-                      ^^^^^^^^^^^^^^^^^
-ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
-Error: Python: Traceback (most recent call last):
-  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\ops_teach_main.py", line 763, in execute
-    p.current_index = sols.index(q_sel)
-                      ^^^^^^^^^^^^^^^^^
-ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+    from rteach.ops.ops_teach_main import classes as main_classes
+  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\__init__.py", line 1, in <module>
+    from .ops_import_system import *
+  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\ops\ops_import_system.py", line 71, in <module>
+    unregister_static_properties()
+  File "C:\Users\bsoo.hwang.SECDS\AppData\Roaming\Blender Foundation\Blender\4.3\scripts\addons\rteach\config\settings_static.py", line 121, in unregister_static_properties
+    del bpy.types.Scene.jog_props
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'Scene' has no attribute 'jog_props'
+Info: Updated sidebar tabs
+Read blend: "D:\Omni\Blender\Model\PRB\addon_test.blend"
