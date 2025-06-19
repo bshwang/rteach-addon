@@ -39,6 +39,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row.operator("object.import_robot_system", text="", icon='APPEND_BLEND')
         row.operator("object.clear_robot_system", text="", icon='TRASH')
         row.prop(p, "show_overlay", text="", toggle=True, icon='OVERLAY')
+        row.operator("object.sync_robot_type", icon='FILE_REFRESH')
 
     def draw_setup_section(self, L, ctx):
         p = ctx.scene.ik_motion_props
@@ -128,7 +129,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         if not p.show_step1:
             return
 
-        if p.robot_type == "KUKA":
+        if p.robot_type == "iiwa14":
             row = box.row(align=True)
             row.prop(p, "fixed_q3_deg", text="R angle(q3)", slider=True)
 
