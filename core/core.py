@@ -154,8 +154,14 @@ def solve_and_apply(ctx, p, T_goal, frame, insert_keyframe=True):
     T_offset = compute_tcp_offset_matrix(p)
     T_flange = np.linalg.inv(T_base) @ T_goal @ np.linalg.inv(T_offset)
 
-    # IK 계산
     sols = ik_solver(T_flange)
+
+    joint_limits = get_joint_limits()
+    ll = np.radians([lim[0] for lim in joint_limits])
+    ul = np.radians([lim[1] for lim in joint_limits])
+
+    sols = [q for q in sols if np.all(q >= ll) and np.all(q <= ul)]
+    
     print(f"🧩 [IK] Solutions found: {len(sols)}")
     for i, q in enumerate(sols):
         print(f"  ▷ sol[{i}] = {[round(a, 3) for a in q]}")
