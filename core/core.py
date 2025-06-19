@@ -134,7 +134,6 @@ def apply_solution(arm, q, frame, insert_keyframe=True):
         except:
             pass
 
-# ──────────────────────────────────────────────
 def sort_solutions(sols):
     def score(q):
         s = 1 if q[0] > 0 else 0
@@ -142,6 +141,70 @@ def sort_solutions(sols):
         w = 1 if q[4] > 0 else 0
         return s * 4 + e * 2 + w
     return sorted(sols, key=score)
+
+def solve_and_apply(ctx, p, T_goal, frame, insert_keyframe=True):
+    print("🔧 [solve_and_apply] Start")
+    print("→ frame:", frame)
+    print("→ insert_keyframe:", insert_keyframe)
+
+    fk_func = get_forward_kinematics()
+    ik_solver = get_inverse_kinematics(p)
+
+    T_base = compute_base_matrix(p)
+    T_offset = compute_tcp_offset_matrix(p)
+    T_flange = np.linalg.inv(T_base) @ T_goal @ np.linalg.inv(T_offset)
+
+    # IK 계산
+    sols = ik_solver(T_flange)
+    print(f"🧩 [IK] Solutions found: {len(sols)}")
+    for i, q in enumerate(sols):
+        print(f"  ▷ sol[{i}] = {[round(a, 3) for a in q]}")
+
+    if not sols:
+        print("❌ IK failed")
+        return False
+
+    def ang_diff(a, b):
+        return ((a - b + pi) % (2 * pi)) - pi
+
+    if p.solutions and len(p.solutions) > p.current_index:
+        q_prev = p.solutions[p.current_index]
+        print("[DEBUG] Selecting best match to previous q:", q_prev)
+        best = min(
+            range(len(sols)),
+            key=lambda i: sum(abs(ang_diff(sols[i][j], q_prev[j])) for j in range(min(len(sols[i]), len(q_prev))))
+        )
+    elif get_active_robot().startswith("UR"):
+        ss = -1 if p.shoulder == 'L' else 1
+        es = -1 if p.elbow   == 'U' else 1
+        ws = -1 if p.wrist   == 'I' else 1
+
+        def score(q):
+            return ((math.copysign(1, q[0]) == ss) +
+                    (math.copysign(1, q[2]) == es) +
+                    (math.copysign(1, q[4]) == ws))
+        best = max(range(len(sols)), key=lambda i: score(sols[i]))
+    else:
+        best = 0
+
+    print(f"✅ Selected solution index: {best}")
+
+    arm = bpy.data.objects.get(p.armature)
+    if not arm:
+        print("[DEBUG] Armature not found:", p.armature)
+        return False
+
+    ctx.scene.frame_set(frame)
+
+    apply_solution(arm, sols[best], frame, insert_keyframe=insert_keyframe)
+
+    q_sel = sols[best]
+    fk_func = get_forward_kinematics()
+    T_fk = fk_func(q_sel)
+    print("[DEBUG] FK result of selected solution:\n", T_fk)
+
+    print("✅ [solve_and_apply] Done")
+    return True
 
 def get_best_ik_solution(p, T_goal, q_ref=None):
     T_base = compute_base_matrix(p)
@@ -158,15 +221,9 @@ def get_best_ik_solution(p, T_goal, q_ref=None):
     ll = np.radians([lim[0] for lim in joint_limits])
     ul = np.radians([lim[1] for lim in joint_limits])
 
-    filtered = []
-    for i, q in enumerate(sols):
-        if len(q) != len(ll):
-            continue
-        if not np.all(q >= ll) or not np.all(q <= ul):
-            continue
-        filtered.append(q)
-    sols = filtered
-    if not sols:
+    sols = [q for q in sols if np.all(q >= ll) and np.all(q <= ul)]
+    
+    if not sols or len(sols) == 0:
         return None, []
 
     def ang_diff(a, b):
