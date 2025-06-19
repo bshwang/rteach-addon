@@ -12,7 +12,10 @@ def draw_overlay_text():
 
     p = bpy.context.scene.ik_motion_props
     if not getattr(p, "show_overlay", True):
-        return  
+        return
+
+    if not hasattr(p, "selected_teach_point") or not hasattr(p, "goal_object"):
+        return
 
     obj = p.selected_teach_point
     goal = p.goal_object
