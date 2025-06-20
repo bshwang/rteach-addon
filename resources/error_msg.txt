@@ -26,8 +26,4 @@ stagejog - PMbot
 
 - tcp 숨기기
 
-- show/hide path를 하나의 버튼으로 통합하고 옆에는 refresh 버튼 추가
-
-- reindex 언제 사용하는건지?
-
 - recompute 기능?
