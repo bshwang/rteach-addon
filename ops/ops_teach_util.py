@@ -205,11 +205,9 @@ class OBJECT_OT_tcp_delete(bpy.types.Operator):
             self.report({'ERROR'}, f"Object '{self.name}' not found")
             return {'CANCELLED'}
 
-        # 컬렉션에서 언링크
         for coll in obj.users_collection:
             coll.objects.unlink(obj)
 
-        # 데이터 삭제
         bpy.data.objects.remove(obj, do_unlink=True)
         ctx.scene.ik_motion_props.status_text = f"Deleted {self.name}"
         update_tcp_sorted_list()
@@ -227,14 +225,11 @@ class OBJECT_OT_reindex_tcp_points(bpy.types.Operator):
             self.report({'INFO'}, "No Teach Points found")
             return {'CANCELLED'}
 
-        # Teach Point들을 index 기준으로 정렬
         sorted_objs = sorted(objs, key=lambda o: o.get("index", 9999))
 
-        # index 재지정
         for i, obj in enumerate(sorted_objs):
             obj["index"] = i
 
-        # ✅ selected_teach_point에 첫 번째 TCP 오브젝트를 Object 타입으로 설정
         props = ctx.scene.ik_motion_props
         props.selected_teach_point = sorted_objs[0] if sorted_objs else None
         props.status_text = "Teach Points reindexed"
@@ -317,17 +312,37 @@ def update_tcp_sorted_list():
     p = bpy.context.scene.ik_motion_props
     coll = bpy.data.collections.get("Teach data")
     if not coll:
+        p.tcp_sorted_list.clear()
+        p.selected_teach_point = None
+        p.tcp_list_index = -1
         return
 
     p.tcp_sorted_list.clear()
 
     for obj in sorted(coll.objects, key=lambda o: o.get("index", 9999)):
+        if obj.name not in bpy.data.objects:
+            continue
         item = p.tcp_sorted_list.add()
         item.name = obj.name
 
     p.tcp_list_index = min(p.tcp_list_index, len(p.tcp_sorted_list) - 1)
+
+    if p.selected_teach_point and p.selected_teach_point.name in bpy.data.objects:
+        obj = p.selected_teach_point
+        from rteach.core.core import get_best_ik_solution
+        import numpy as np
+
+        T_goal = np.array(obj.matrix_world)
+        q_sel, sols = get_best_ik_solution(p, T_goal)
+        p.solutions = [list(map(float, s)) for s in sols]
+        p.max_solutions = len(sols)
+        p.current_index = obj.get("solution_index", 0)
+        p.solution_index_ui = p.current_index + 1
+    else:
+        p.selected_teach_point = None
+
     bpy.context.area.tag_redraw()
-    
+
 # ──────────────────────────────────────────────────────────────     
 class OBJECT_OT_export_teach_data(bpy.types.Operator):
     """Export Teach Data (TCP pose + joint angles)"""
@@ -513,7 +528,6 @@ class OBJECT_OT_refresh_stage_sliders(bpy.types.Operator):
             idx = {"x": 0, "y": 1, "z": 2}.get(axis[-1], 2)
             val = obj.rotation_euler[idx] if is_rot else obj.location[idx]
 
-            # 내부값 → UI 단위로 환산
             if joint.unit_type == "mm":
                 val *= 1000.0
             elif joint.unit_type == "deg":
@@ -529,23 +543,8 @@ class OBJECT_OT_refresh_tcp_list(bpy.types.Operator):
     bl_label = "Refresh TCP List"
 
     def execute(self, ctx):
-        p = ctx.scene.ik_motion_props
-        coll = bpy.data.collections.get("Teach data")
-        if not coll:
-            self.report({'WARNING'}, "Teach data collection not found")
-            return {'CANCELLED'}
-
-        tcp_names = sorted(
-            [ob.name for ob in coll.objects if ob.name.startswith("P.")],
-            key=lambda name: bpy.data.objects[name].get("index", 9999)
-        )
-
-        p.tcp_sorted_list.clear()
-        for name in tcp_names:
-            item = p.tcp_sorted_list.add()
-            item.name = name
-
-        self.report({'INFO'}, f"{len(tcp_names)} TCPs listed")
+        update_tcp_sorted_list()         
+        self.report({'INFO'}, "TCP list refreshed")
         return {'FINISHED'}
 	    
 # ──────────────────────────────────────────────────────────────   
