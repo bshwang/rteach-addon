@@ -139,11 +139,18 @@ class OBJECT_OT_execute_linear_motion(bpy.types.Operator):
 
         preferred_idx = int(src.get("solution_index", p.current_index))
         master_q      = sanitize_q(src.get("joint_pose", []), dof)
+        print(f"[Bake] Source TCP: {src.name}, preferred_idx = {preferred_idx}, q_start = {[round(math.degrees(v),1) for v in master_q]}")
 
         def ang_diff(a, b):
             return ((a - b + math.pi) % (2 * math.pi)) - math.pi
 
+        def _pattern(q):
+            return (q[0] >= 0, q[2] >= 0, q[4] >= 0)
+
+        preferred_pat = _pattern(master_q)
+
         for i in range(steps):
+            f = frame0 + i
             T_goal = np.eye(4)
             T_goal[:3, 3] = pos_series[i]
             t = i / (steps - 1) if steps > 1 else 0.0
@@ -158,23 +165,31 @@ class OBJECT_OT_execute_linear_motion(bpy.types.Operator):
             T_flange[:3, :3] = U @ Vt
 
             sols_raw = ik_solver(T_flange)
-            sols     = [sanitize_q(s, dof) for s in sols_raw]
+            sols = [sanitize_q(s, dof) for s in sols_raw]
+            
             if not sols:
                 if self.DEBUG_MOVE_L:
-                    print(f"[Move_L] f{frame0+i}: IK fail")
+                    print(f"[Move_L] f{f}: IK fail")
                 continue
 
-            if preferred_idx < len(sols):
-                q_sel = sols[preferred_idx]
-                chosen_idx = preferred_idx
-            else:
-                chosen_idx = min(range(len(sols)),
-                                 key=lambda k: sum(abs(ang_diff(sols[k][j], master_q[j])) for j in range(dof)))
-                q_sel = sols[chosen_idx]
+            q_sel = sols[preferred_idx] if preferred_idx < len(sols) else None
+
+            if q_sel is None:
+                same_pat = [q for q in sols if _pattern(q) == preferred_pat]
+                if same_pat:
+                    q_sel = min(same_pat, key=lambda q: sum(abs(ang_diff(q[j], master_q[j])) for j in range(dof)))
+
+            if q_sel is None:
+                q_sel = min(sols, key=lambda q: sum(abs(ang_diff(q[j], master_q[j])) for j in range(dof)))
+
+            chosen_idx = sols.index(q_sel)
 
             if i == steps - 1 and dst.get("joint_pose"):
                 q_sel = sanitize_q(dst["joint_pose"], dof)
                 chosen_idx = dst.get("solution_index", chosen_idx)
+
+            if self.DEBUG_MOVE_L:
+                print(f"[Move_L] f{f}: picked idx={chosen_idx}, pat={_pattern(q_sel)}, q={[round(math.degrees(v),1) for v in q_sel]}")
 
             master_q = q_sel
 
@@ -370,7 +385,7 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
         fps            = ctx.scene.render.fps
         default_speed  = p.motion_speed           # mm/s
         default_wait_s = p.wait_time_sec          # sec
-        f0          = ctx.scene.frame_current
+        f0          = p.bake_start_frame
         giz_scale   = giz.scale[:]
         f           = f0
 
