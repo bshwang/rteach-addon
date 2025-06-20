@@ -5,6 +5,9 @@ from rteach.core.robot_state import get_active_robot
 from rteach.core.core import get_BONES, get_joint_limits
 from rteach.core.robot_presets import ROBOT_CONFIGS
 
+def get_addon_prefs():
+    return bpy.context.preferences.addons["rteach"].preferences
+
 class UI_UL_tcp_list(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         if item and item.name:
@@ -38,7 +41,6 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row.prop(p, "robot_type", text="")
         row.operator("object.import_robot_system", text="", icon='APPEND_BLEND')
         row.operator("object.clear_robot_system", text="", icon='TRASH')
-        row.prop(p, "show_overlay", text="", toggle=True, icon='OVERLAY')
         row.operator("object.sync_robot_type", icon='FILE_REFRESH')
 
     def draw_setup_section(self, L, ctx):
@@ -61,17 +63,21 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row.prop(p, "show_target", icon=icon, text="Target Pose", emboss=False)
         if p.show_target and p.goal_object:
             box.prop(p, "goal_object", text="Target")
-            col = box.column(align=True)
-            col.prop(p.goal_object, 'location', index=0, text="X")
-            col.prop(p.goal_object, 'location', index=1, text="Y")
-            col.prop(p.goal_object, 'location', index=2, text="Z")
-            col.prop(p.goal_object, 'rotation_euler', index=0, text="RX")
-            col.prop(p.goal_object, 'rotation_euler', index=1, text="RY")
-            col.prop(p.goal_object, 'rotation_euler', index=2, text="RZ")
-            box.operator("object.focus_on_target", text="Select Target", icon='RESTRICT_SELECT_OFF')
-            box.operator("object.snap_goal_to_active", text="Snap Target to Selected", icon='PIVOT_ACTIVE')
-            box.operator("object.snap_target_to_fk", text="Snap Target to FK", icon='CONSTRAINT')
-            box.operator("object.setup_tcp_from_gizmo", text="Create TCP from Gizmo", icon='EMPTY_ARROWS')
+            row = box.row(align=True)
+            row.prop(p.goal_object, 'location', index=0, text="X")
+            row.prop(p.goal_object, 'rotation_euler', index=0, text="RX")
+            row = box.row(align=True)
+            row.prop(p.goal_object, 'location', index=1, text="Y")
+            row.prop(p.goal_object, 'rotation_euler', index=1, text="RY")
+            row = box.row(align=True)
+            row.prop(p.goal_object, 'location', index=2, text="Z")
+            row.prop(p.goal_object, 'rotation_euler', index=2, text="RZ")
+            row = box.row(align=True)
+            row.operator("object.focus_on_target", text="Select", icon='RESTRICT_SELECT_OFF')
+            row.operator("object.snap_goal_to_active", text="Snap to Active", icon='PIVOT_ACTIVE')
+            row = box.row(align=True)
+            row.operator("object.snap_target_to_fk", text="Snap to FK", icon='CONSTRAINT')
+            row.operator("object.setup_tcp_from_gizmo", text="Set as TCP", icon='EMPTY_ARROWS')
             
     def draw_jog_section(self, L, ctx):
 
@@ -246,6 +252,9 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.prop(p, "precise_linear", text="", icon='CONSTRAINT', toggle=True)
 
     def draw_stage_jog_section(self, layout, ctx):
+        prefs = get_addon_prefs()
+        if not prefs.show_stage:
+            return
         p = ctx.scene.ik_motion_props
         props = ctx.scene.stage_props
         box = layout.box()
@@ -257,7 +266,6 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         if not p.show_stage:
             return
     
-        # 현재 로봇의 stage_joints 목록 가져오기
         config = ROBOT_CONFIGS.get(p.robot_type, {})
         joints = config.get("stage_joints", [])
         if not joints:
@@ -275,6 +283,9 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
                 box.label(text=f"⚠ Missing: {key}")
             
     def draw_io_section(self, L, ctx):
+        prefs = get_addon_prefs()
+        if not prefs.show_io:
+            return
         p = ctx.scene.ik_motion_props
         box = L.box()
         row = box.row()
