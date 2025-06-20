@@ -838,7 +838,7 @@ class OBJECT_OT_tcp_list_select(bpy.types.Operator):
     bl_idname = "object.tcp_list_select"
     bl_label = "Snap + Preview"
 
-    index: bpy.props.IntProperty()  
+    index: bpy.props.IntProperty()
 
     def execute(self, ctx):
         p = ctx.scene.ik_motion_props
@@ -852,28 +852,10 @@ class OBJECT_OT_tcp_list_select(bpy.types.Operator):
             return {'CANCELLED'}
 
         p.selected_teach_point = obj
-        p.tcp_list_index = self.index  
+        p.tcp_list_index = self.index
 
-        tgt = p.goal_object
-        arm = bpy.data.objects.get(p.armature)
-        if not (tgt and arm):
-            return {'CANCELLED'}
-
-        tgt.matrix_world = obj.matrix_world.copy()
-        tgt.scale = (1, 1, 1)
-
-        if "joint_pose" in obj:
-            apply_solution(arm, obj["joint_pose"], ctx.scene.frame_current, insert_keyframe=False)
-
-            if len(obj["joint_pose"]) >= 3:
-                p.fixed_q3 = obj.get("fixed_q3", obj["joint_pose"][2])
-                p.fixed_q3_deg = p.fixed_q3
-
-            p.current_index     = int(obj.get("solution_index", 0))
-            p.solution_index_ui = p.current_index + 1
-
-        p.status_text = f"Snapped and previewed {obj.name}"
-        return {'FINISHED'}
+        from rteach.ops.ops_teach_main import preview_obj_pose
+        return preview_obj_pose(ctx, obj, forward=False)
     
 # ──────────────────────────────────────────────────────────────    
 class OBJECT_OT_keyframe_joint_pose(bpy.types.Operator):
