@@ -192,6 +192,13 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         description="Display overlay text in 3D View",
         default=True
     )
+
+    bake_start_frame: bpy.props.IntProperty(
+        name="Start Frame",
+        default=1,
+        min=1,
+        description="Start frame for baking motion"
+    )
     
     show_io: bpy.props.BoolProperty(name="Show Import/Export", default=True)
 
