@@ -87,6 +87,7 @@ def register():
     bpy.types.Scene.ik_motion_props = bpy.props.PointerProperty(type=IKMotionProperties)
     bpy.types.Scene.jog_props = bpy.props.PointerProperty(type=JogProperties)
     bpy.types.Scene.stage_props = bpy.props.PointerProperty(type=StageJogProperties)
+    bpy.utils.register_class(RobotSimPreferences)
 
     ui_pie.register()
     ui_overlay.register()
@@ -110,3 +111,4 @@ def unregister():
         del bpy.types.Scene.stage_props
     except:
         pass
+    bpy.utils.unregister_class(RobotSimPreferences)
