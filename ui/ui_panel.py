@@ -141,12 +141,9 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.prop(p, "fixed_q3_deg", text="R angle(q3)", slider=True)
 
         pose_box = box.box()
-        pose_box.label(text=f"Pose {p.current_index + 1}/{len(p.solutions)}")
         split = pose_box.split(factor=0.4, align=True)  
         split.prop(p, "solution_index_ui", text="Index")
-
         right = split.split(factor=0.7, align=True)  
-
         left_btns = right.row(align=True)
         left_btns.operator("object.cycle_pose_preview", text="◀").direction = 'PREV'
         left_btns.operator("object.cycle_pose_preview", text="▶").direction = 'NEXT'
