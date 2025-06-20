@@ -2,6 +2,7 @@ import bpy
 import blf
 from bpy.app.handlers import persistent
 from math import degrees
+from rteach.ui.ui_panel import get_addon_prefs
 
 handler_ref = []
 
@@ -9,7 +10,11 @@ def draw_overlay_text():
     region = bpy.context.region
     if not region:
         return
-
+    
+    prefs = get_addon_prefs()
+    if not prefs.show_overlay:
+        return
+    
     p = bpy.context.scene.ik_motion_props
     if not getattr(p, "show_overlay", True):
         return
