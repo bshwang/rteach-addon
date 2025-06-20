@@ -120,11 +120,9 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
 
         box.separator()
         row = box.row(align=True)
-        row.operator("object.keyframe_joint_pose", text="Keyframe Pose", icon='KEY_HLT')
-        row.operator("object.record_tcp_from_jog", text="Record as TCP", icon='EMPTY_AXIS')
-
-        row = box.row(align=True)
-        row.operator("object.go_home_pose", text="Go Home", icon='HOME')
+        row.operator("object.keyframe_joint_pose", text="Keyframe", icon='KEY_HLT')
+        row.operator("object.record_tcp_from_jog", text="Auto Record", icon='EMPTY_AXIS')
+        row.operator("object.go_home_pose", text="Home", icon='HOME')
 
     def draw_step1(self, L, ctx):
         p = ctx.scene.ik_motion_props
@@ -135,23 +133,25 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         if not p.show_step1:
             return
 
-        if p.robot_type == "iiwa14":
-            row = box.row(align=True)
-            row.prop(p, "fixed_q3_deg", text="R angle(q3)", slider=True)
-
         row = box.row(align=True)
         row.operator("object.teach_pose", text="Go To", icon='VIEW_CAMERA')
         row.prop(p, "auto_record", text="Record", toggle=True, icon='REC')
+        row = box.row(align=True)
+        if p.robot_type == "iiwa14":
+            row.prop(p, "fixed_q3_deg", text="R angle(q3)", slider=True)
 
         pose_box = box.box()
         pose_box.label(text=f"Pose {p.current_index + 1}/{len(p.solutions)}")
-        row = pose_box.row(align=True)
-        row.prop(p, "solution_index_ui", text="Index")
-        row.operator("object.cycle_pose_preview", text="◀").direction = 'PREV'
-        row.operator("object.cycle_pose_preview", text="▶").direction = 'NEXT'
-        pose_box.prop(p, "use_last_pose", text="Keep Last Pose")
-        row = pose_box.row(align=True)
-        row.operator("object.apply_preview_pose", text="Apply Pose", icon='KEY_HLT')
+        split = pose_box.split(factor=0.4, align=True)  
+        split.prop(p, "solution_index_ui", text="Index")
+
+        right = split.split(factor=0.7, align=True)  
+
+        left_btns = right.row(align=True)
+        left_btns.operator("object.cycle_pose_preview", text="◀").direction = 'PREV'
+        left_btns.operator("object.cycle_pose_preview", text="▶").direction = 'NEXT'
+        right.operator("object.apply_preview_pose", text="", icon='CHECKMARK')
+
 
     def draw_step2(self, L, ctx):
         p = ctx.scene.ik_motion_props
@@ -182,9 +182,8 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             op.name = p.selected_teach_point.name
         else:
             row.operator("object.tcp_delete", text="", icon='X') 
-        row.operator("object.refresh_tcp_list", text="🔄 Refresh TCP List", icon="FILE_REFRESH")
-        row.operator("object.update_tcp_pose", text="Pose Update", icon='EXPORT')
-        row.operator("object.recompute_selected_tcp", text="Recompute", icon='CON_ROTLIKE')
+        row.operator("object.refresh_tcp_list", text="Refresh", icon="FILE_REFRESH")
+        row.operator("object.update_tcp_pose", text="Update", icon='EXPORT')
 
         row = box.row(align=True)
         row.prop(p, "selected_teach_point", text="Selected")
@@ -209,7 +208,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             return
 
         row = box.row(align=True)
-        row.prop(ctx.scene, "frame_current", text="Start Frame")
+        row.prop(p, "bake_start_frame", text="Start Frame")
         row.operator("screen.frame_jump", text="", icon='REW').end = False
         row.operator("screen.frame_jump", text="", icon='FF').end = True
         row.operator("screen.keyframe_jump", text="", icon='PREV_KEYFRAME').next = False
