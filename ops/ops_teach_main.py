@@ -83,7 +83,7 @@ class OBJECT_OT_execute_linear_motion(bpy.types.Operator):
     bl_idname = "object.execute_linear_motion"
     bl_label  = "Move_L"
 
-    DEBUG_MOVE_L = True
+    DEBUG_MOVE_L = False
 
     def execute(self, ctx):
 
@@ -93,27 +93,29 @@ class OBJECT_OT_execute_linear_motion(bpy.types.Operator):
             p.status_text = "Linear source/target not set"
             return {'FINISHED'}
 
-        M_start, M_end = map(np.array, (src.matrix_world, dst.matrix_world))
-        steps      = max(1, int(p.linear_frames))
-        pos_series = np.linspace(M_start[:3, 3], M_end[:3, 3], steps)
-
-        robot      = get_active_robot()
-        arm        = bpy.data.objects.get(p.armature)
+        arm = bpy.data.objects.get(p.armature)
         if not arm:
             self.report({'ERROR'}, "Armature not found")
             return {'CANCELLED'}
 
-        frame0   = ctx.scene.frame_current
+        robot   = get_active_robot()
+        dof     = len(get_BONES())
+        frame0  = ctx.scene.frame_current
+        steps   = max(1, int(p.linear_frames))
 
-        # ① iiwa14 + High-Precision LIN 
+        # ✅ Precise LIN (iiwa14)
         if robot == "iiwa14" and p.precise_linear and src.get("joint_pose"):
-            q_init   = np.array(src["joint_pose"], float)
-            T_goal   = np.linalg.inv(compute_base_matrix(p)) @ \
-                       np.array(dst.matrix_world) @ \
-                       np.linalg.inv(compute_tcp_offset_matrix(p))
-                       
+            from rteach.core.core_iiwa import linear_move
+
+            q_init = np.array(sanitize_q(src["joint_pose"], dof), float)
+            T_goal = (
+                np.linalg.inv(compute_base_matrix(p))
+                @ np.array(dst.matrix_world)
+                @ np.linalg.inv(compute_tcp_offset_matrix(p))
+            )
+
             path = linear_move(q_init, T_goal, p)
-            if path is not None:
+            if path:
                 for i, q in enumerate(path):
                     ctx.scene.frame_set(frame0 + i)
                     apply_solution(arm, q, frame0 + i, insert_keyframe=True)
@@ -122,85 +124,82 @@ class OBJECT_OT_execute_linear_motion(bpy.types.Operator):
 
             self.report({'WARNING'}, "Precise LIN failed – fallback to fast mode")
 
-        # ② Fast LIN  
-        q_start, q_end = src.matrix_world.to_quaternion(), dst.matrix_world.to_quaternion()
-        R_key = R.from_quat([[q_start.x, q_start.y, q_start.z, q_start.w],
-                             [q_end.x,   q_end.y,   q_end.z,   q_end.w]])
-        slerp = Slerp([0, 1], R_key)
+        # ────────────────────────────────
+        # Fast LIN
+        M_start, M_end = map(np.array, (src.matrix_world, dst.matrix_world))
+        pos_series = np.linspace(M_start[:3, 3], M_end[:3, 3], steps)
 
-        if robot == "iiwa14":
-            q3_start = src.get("joint_pose", [0.0]*3)[2]
-            q3_end   = dst.get("joint_pose", [0.0]*3)[2]
+        q_start = src.matrix_world.to_quaternion()
+        q_end   = dst.matrix_world.to_quaternion()
+        R_key   = R.from_quat([[q_start.x, q_start.y, q_start.z, q_start.w],
+                               [q_end.x,   q_end.y,   q_end.z,   q_end.w]])
+        slerp   = Slerp([0, 1], R_key)
 
         ik_solver = get_inverse_kinematics(p)
 
-        master_q = None
-        success  = 0
+        preferred_idx = int(src.get("solution_index", p.current_index))
+        master_q      = sanitize_q(src.get("joint_pose", []), dof)
 
-        def stable_ang_diff(a, b):
+        def ang_diff(a, b):
             return ((a - b + math.pi) % (2 * math.pi)) - math.pi
 
         for i in range(steps):
             T_goal = np.eye(4)
             T_goal[:3, 3] = pos_series[i]
-            t_val = i / (steps - 1) if steps > 1 else 0.0
-            T_goal[:3, :3] = slerp([t_val])[0].as_matrix()
-
-            if robot == "iiwa14":
-                p.fixed_q3 = (1.0 - t_val) * q3_start + t_val * q3_end
+            t = i / (steps - 1) if steps > 1 else 0.0
+            T_goal[:3, :3] = slerp([t])[0].as_matrix()
 
             T_flange = (
-                np.linalg.inv(compute_base_matrix(p)) @
-                T_goal @
-                np.linalg.inv(compute_tcp_offset_matrix(p))
+                np.linalg.inv(compute_base_matrix(p))
+                @ T_goal
+                @ np.linalg.inv(compute_tcp_offset_matrix(p))
             )
             U, _, Vt = np.linalg.svd(T_flange[:3, :3])
             T_flange[:3, :3] = U @ Vt
 
-            sols = ik_solver(T_flange)
+            sols_raw = ik_solver(T_flange)
+            sols     = [sanitize_q(s, dof) for s in sols_raw]
             if not sols:
                 if self.DEBUG_MOVE_L:
-                    print(f"[Move_L] f{frame0+i}: IK failed")
+                    print(f"[Move_L] f{frame0+i}: IK fail")
                 continue
 
-            if master_q is None:
-                if "joint_pose" in src:
-                    master_q = np.array(src["joint_pose"], float)
-                elif p.solutions and len(p.solutions) > p.current_index:
-                    master_q = np.array(p.solutions[p.current_index], float)
-                else:
-                    master_q = np.array(sols[0], float)
+            if preferred_idx < len(sols):
+                q_sel = sols[preferred_idx]
+                chosen_idx = preferred_idx
+            else:
+                chosen_idx = min(range(len(sols)),
+                                 key=lambda k: sum(abs(ang_diff(sols[k][j], master_q[j])) for j in range(dof)))
+                q_sel = sols[chosen_idx]
 
-                if len(master_q) != len(sols[0]):
-                    print(f"[WARN] master_q DOF mismatch: {len(master_q)} vs {len(sols[0])}")
-                    master_q = np.array(sols[0], float)
-
-            def _score(q):
-                return sum(abs(stable_ang_diff(q[j], master_q[j]))
-                        for j in range(min(len(q), len(master_q))))
-
-            q_sel = min(sols, key=_score)
             if i == steps - 1 and dst.get("joint_pose"):
-                q_sel = np.array(dst["joint_pose"], float)
+                q_sel = sanitize_q(dst["joint_pose"], dof)
+                chosen_idx = dst.get("solution_index", chosen_idx)
+
             master_q = q_sel
+
+            if self.DEBUG_MOVE_L:
+                print(f"[Move_L] f{frame0+i}: idx={chosen_idx}, q={[round(math.degrees(v),1) for v in q_sel]}")
 
             ctx.scene.frame_set(frame0 + i)
             apply_solution(arm, q_sel, frame0 + i, insert_keyframe=True)
-            success += 1
 
-        if p.goal_object and master_q is not None:
-            fk_func = get_forward_kinematics()
-            T_last = (
-                compute_base_matrix(p) @
-                fk_func(master_q) @
-                compute_tcp_offset_matrix(p)
-            )
-            p.goal_object.matrix_world = Matrix(T_last)
+        fk_func = get_forward_kinematics()
+        T_last = (
+            compute_base_matrix(p)
+            @ fk_func(master_q)
+            @ compute_tcp_offset_matrix(p)
+        )
+        p.goal_object.matrix_world = Matrix(T_last)
 
-        p.status_text = f"Fast LIN done ({success}/{steps})"
+        p.status_text = f"Fast LIN done ({steps} steps)"
         return {'FINISHED'}
-
+    
 # ──────────────────────────────────────────────────────────────
+def sanitize_q(q_raw, dof):
+    q = list(q_raw)
+    return (q + [0.0] * dof)[:dof]
+
 class OBJECT_OT_record_tcp_point(bpy.types.Operator):
     bl_idname = "object.record_tcp_point"
     bl_label  = "Record Goal"
@@ -229,16 +228,17 @@ class OBJECT_OT_record_tcp_point(bpy.types.Operator):
     	
         dup.show_name = True
         p.selected_teach_point = dup
-        
+    
+        dof = len(get_BONES())
         if p.solutions and len(p.solutions) > p.current_index:
+            q_safe = sanitize_q(p.solutions[p.current_index], dof)
             dup["solution_index"] = p.current_index
-            dup["joint_pose"] = list(map(float, p.solutions[p.current_index]))       
-            
+            dup["joint_pose"] = q_safe       
+
         coll.objects.link(dup)
         update_tcp_sorted_list()
-        
         return {'FINISHED'}
-
+    
 # ──────────────────────────────────────────────────────────────
 class OBJECT_OT_cycle_pose_preview(bpy.types.Operator):
     bl_idname = "object.cycle_pose_preview"
