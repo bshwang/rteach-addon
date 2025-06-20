@@ -53,6 +53,33 @@ classes = (
     *ui_classes, 
 )
 
+class RobotSimPreferences(bpy.types.AddonPreferences):
+    bl_idname = __name__
+
+    show_overlay: bpy.props.BoolProperty(
+        name="Show Overlay",
+        description="Display overlay text in 3D view",
+        default=True
+    )
+
+    show_stage: bpy.props.BoolProperty(
+        name="Show Stage Jog Mode",
+        default=True
+    )
+
+    show_io: bpy.props.BoolProperty(
+        name="Show Import/Export",
+        default=True
+    )
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text="Optional UI Sections:")
+        layout.prop(self, "show_overlay")
+        layout.prop(self, "show_stage")
+        layout.prop(self, "show_io")
+
+
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
