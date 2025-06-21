@@ -6,9 +6,6 @@ stagejog - PMbot
 버그fix
 - csv graph preset으로 수정
 - robot jog모드에서 recorded as tcp 하면 gizmo가 fk로 snap되고 거기에 tcp가 생겨야 하는데 그냥 gizmo가 가만히 있고 거기에 생김
-- path % 갈때 pose 유지
-- 포즈 순환 시 전체 개수 표시 오류
 
 개선
-- tcp 숨기기
 - recompute 기능?
