@@ -4,8 +4,6 @@ stagejog - PMbot
 로봇 전체 가동범위 표시(체크박스로)
 
 버그fix
-- csv graph preset으로 수정
-- robot jog모드에서 recorded as tcp 하면 gizmo가 fk로 snap되고 거기에 tcp가 생겨야 하는데 그냥 gizmo가 가만히 있고 거기에 생김
 
 개선
 - recompute 기능?
