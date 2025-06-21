@@ -1,29 +1,14 @@
 신규기능
-
 path를 로봇이 움직이면서 실시간으로 표시(전체 경로에서 움직이는 것 처럼)
-
 stagejog - PMbot
-
 로봇 전체 가동범위 표시(체크박스로)
 
-
-
 버그fix
-
 - csv graph preset으로 수정
-
-- overlay에서 fixed q3가 ur도 표시됨
-
 - robot jog모드에서 recorded as tcp 하면 gizmo가 fk로 snap되고 거기에 tcp가 생겨야 하는데 그냥 gizmo가 가만히 있고 거기에 생김
-
 - path % 갈때 pose 유지
-
 - 포즈 순환 시 전체 개수 표시 오류
 
-
-
 개선
-
 - tcp 숨기기
-
 - recompute 기능?
