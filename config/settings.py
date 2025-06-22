@@ -70,9 +70,9 @@ class IKMotionProperties(bpy.types.PropertyGroup):
 
     motion_speed: bpy.props.FloatProperty(
         name="Speed (mm/s)",
-        default=100.0,
-        min=1.0,
-        soft_max=1000.0
+        default=200.0,
+        min=0.0,
+        soft_max=500.0
     )
 
     wait_time_sec: bpy.props.FloatProperty(
@@ -80,6 +80,38 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         default=0.5,
         min=0.0,
         soft_max=10.0
+    )
+    
+    sel_tcp_speed: bpy.props.FloatProperty(
+        name="Speed (mm/s)",
+        description="Selected TCP speed",
+        min=0.0,
+        max=500.0,
+        default=0.0,
+        get=lambda self: (
+            self.selected_teach_point.get("speed", 0.0)
+            if self.selected_teach_point else 0.0
+        ),
+        set=lambda self, value: (
+            self.selected_teach_point.__setitem__("speed", value)
+            if self.selected_teach_point else None
+        ),
+    )
+
+    sel_tcp_wait: bpy.props.FloatProperty(
+        name="Wait (sec)",
+        description="Selected TCP wait time",
+        min=0.0,
+        max=10.0,
+        default=0.0,
+        get=lambda self: (
+            self.selected_teach_point.get("wait_time_sec", 0.0)
+            if self.selected_teach_point else 0.0
+        ),
+        set=lambda self, value: (
+            self.selected_teach_point.__setitem__("wait_time_sec", value)
+            if self.selected_teach_point else None
+        ),
     )
 
     robot_type: bpy.props.StringProperty(
@@ -199,7 +231,24 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         min=1,
         description="Start frame for baking motion"
     )
-    
+
+    bake_all_tcp: bpy.props.BoolProperty(
+        name="Bake All TCPs",
+        default=True
+    )
+
+    bake_start_idx: bpy.props.IntProperty(
+        name="Start Index",
+        default=0,
+        min=0
+    )
+
+    bake_end_idx: bpy.props.IntProperty(
+        name="End Index",
+        default=0,
+        min=0
+    )
+
     show_io: bpy.props.BoolProperty(name="Show Import/Export", default=True)
 
     armature: bpy.props.EnumProperty(items=lambda s,c:[(o.name,o.name,'') for o in bpy.data.objects if o.type=='ARMATURE'] or [('None','None','')])
@@ -259,6 +308,5 @@ class IKMotionProperties(bpy.types.PropertyGroup):
     @temp_solutions.setter
     def temp_solutions(self, v): self.ik_temp_solutions = json.dumps(v)
     
-
 
 
