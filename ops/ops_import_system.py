@@ -42,6 +42,7 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
         p = ctx.scene.ik_motion_props
         p.robot_type = self.system
         p.preset_key = self.system
+        p.preview_only = False
         print(f"[INFO] Robot system set to '{self.system}'")
 
         arm_name = entry.get("armature")
@@ -58,6 +59,7 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
                 if in_setup:
                     setattr(p, f"{key}_object", obj)
                     print(f"[INFO] {key}_object set to '{name}'")
+                    
                 else:
                     print(f"[SKIP] {key}_object '{name}' is not in 'Setup' collection")
 
