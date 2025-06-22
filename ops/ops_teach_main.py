@@ -226,29 +226,44 @@ class OBJECT_OT_record_tcp_point(bpy.types.Operator):
             self.report({'ERROR'}, "Goal not set")
             return {'CANCELLED'}
 
-        coll = (bpy.data.collections.get("Teach data")
-                or bpy.data.collections.new("Teach data"))
+        coll = bpy.data.collections.get("Teach data") or bpy.data.collections.new("Teach data")
         if coll.name not in {c.name for c in ctx.scene.collection.children}:
             ctx.scene.collection.children.link(coll)
 
         new_idx = len([o for o in bpy.data.objects if o.name.startswith("P.")])
         dup = bpy.data.objects.new(name=f"P.{new_idx:03d}", object_data=tgt.data)
+        if "_RNA_UI" not in dup:
+            dup["_RNA_UI"] = {}
+        dup["_RNA_UI"]["speed"] = {
+            "min": 0.0, "max": 500.0,
+            "soft_min": 0.0, "soft_max": 500.0
+        }
+        dup["_RNA_UI"]["wait_time_sec"] = {
+            "min": 0.0, "max": 10.0,
+            "soft_min": 0.0, "soft_max": 10.0
+        }
+
         dup.matrix_world = tgt.matrix_world
         dup.scale        = tgt.scale * 0.5
         dup["index"]     = new_idx
-        dup["motion_type"]    = "LINEAR"
-        dup["fixed_q3"] = p.fixed_q3
-        dup["speed"] = p.motion_speed
+        dup["motion_type"] = "LINEAR"
+        dup["fixed_q3"]  = p.fixed_q3
+        dup["speed"]     = p.motion_speed
         dup["wait_time_sec"] = p.wait_time_sec
-    	
+
+        if "_RNA_UI" not in dup:
+            dup["_RNA_UI"] = {}
+        dup["_RNA_UI"]["speed"] = {"min": 0.0, "max": 500.0, "soft_min": 0.0, "soft_max": 500.0}
+        dup["_RNA_UI"]["wait_time_sec"] = {"min": 0.0, "max": 10.0, "soft_min": 0.0, "soft_max": 10.0}
+
         dup.show_name = True
         p.selected_teach_point = dup
-    
+
         dof = len(get_BONES())
         if p.solutions and len(p.solutions) > p.current_index:
             q_safe = sanitize_q(p.solutions[p.current_index], dof)
             dup["solution_index"] = p.current_index
-            dup["joint_pose"] = q_safe       
+            dup["joint_pose"] = q_safe
 
         coll.objects.link(dup)
         update_tcp_sorted_list()
@@ -370,12 +385,14 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
 
         tps_all = sorted(coll.objects, key=lambda o: o.get("index", 9999))
 
-        start_idx = p.bake_start_tcp.get("index", 0) if p.bake_start_tcp else 0
-        end_idx   = p.bake_end_tcp.get("index", 9999) if p.bake_end_tcp else 9999
+        if p.bake_all_tcp:
+            start_idx = 0
+            end_idx   = len(tps_all) - 1
+        else:
+            start_idx = p.bake_start_idx
+            end_idx   = p.bake_end_idx
 
-        if start_idx > end_idx:
-            start_idx, end_idx = end_idx, start_idx
-
+        start_idx, end_idx = sorted((start_idx, end_idx))
         tps = [tp for tp in tps_all if start_idx <= tp.get("index", 9999) <= end_idx]
 
         if not tps:
@@ -383,8 +400,8 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
             return {'CANCELLED'}
 
         fps            = ctx.scene.render.fps
-        default_speed  = p.motion_speed           # mm/s
-        default_wait_s = p.wait_time_sec          # sec
+        default_speed  = p.motion_speed
+        default_wait_s = p.wait_time_sec
         f0          = p.bake_start_frame
         giz_scale   = giz.scale[:]
         f           = f0
@@ -420,9 +437,6 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
             motion_s = dist_mm / max(speed_mm, 1e-3)
             span     = max(1, round(motion_s * fps))
 
-            print(f"[Bake] {tp.name} → {next_tp.name} | "
-                  f"{motion} | Dist {dist_mm:.1f} mm, Speed {speed_mm} mm/s → {span} frames")
-
             if motion == "LINEAR":
 
                 robot = get_active_robot()
@@ -444,17 +458,12 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
                         start_pos = T_start[:3, 3] * 1000
                         goal_pos  = T_goal[:3, 3] * 1000
                         dist_mm   = np.linalg.norm(goal_pos - start_pos)
-                        print(f"[Bake][{tp.name}] Precise LIN")
-                        print(f"  q_start (deg): {[round(math.degrees(q),1) for q in q_start]}")
                         fps = ctx.scene.render.fps
-                        speed = tp.get("speed", p.motion_speed)  
+                        speed = tp.get("speed", p.motion_speed)
 
                         motion_time_sec = dist_mm / max(speed, 1e-3)
                         n_steps = round(motion_time_sec * fps)
                         auto_step_mm = dist_mm / max(n_steps, 1)
-
-                        print(f"  dist = {round(dist_mm,2)} mm | speed = {speed} mm/s | fps = {fps}")
-                        print(f"  → n_steps = {n_steps} | auto_step_mm = {round(auto_step_mm, 2)}")
 
                         p.step_mm = auto_step_mm
                         path = linear_move(q_start, T_goal_flange, p)
@@ -464,16 +473,11 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
                                 apply_solution(arm, q, f + i + 1, insert_keyframe=True)
 
                             next_tp["joint_pose"] = list(map(float, path[-1]))
-                            
                             f += len(path)
                             continue
-                        else:
-                            self.report({'WARNING'}, f"Precise LIN failed: {tp.name} → {next_tp.name}")
-                    else:
-                        self.report({'WARNING'}, f"[Bake] joint_pose missing in {tp.name}")
 
-                if robot == "iiwa14":
-                    p.fixed_q3 = float(tp.get("fixed_q3", p.fixed_q3))
+                    if robot == "iiwa14":
+                        p.fixed_q3 = float(tp.get("fixed_q3", p.fixed_q3))
 
                 p.goal_object   = giz
                 p.linear_target = next_tp
@@ -496,13 +500,13 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
                 giz.matrix_world = next_tp.matrix_world.copy()
                 giz.scale        = giz_scale
 
-                f = end_frame  
+                f = end_frame
 
             else:
                 self.report({'WARNING'}, f"{tp.name} unsupported motion_type")
                 return {'CANCELLED'}
 
-            f += 1  
+            f += 1
 
         self.report({'INFO'}, "Bake finished")
         return {'FINISHED'}
@@ -520,7 +524,7 @@ class OBJECT_OT_update_tcp_pose(bpy.types.Operator):
         obj = bpy.data.objects.get(self.name or (p.selected_teach_point.name if p.selected_teach_point else None))
         tgt = p.goal_object
         if not (arm and obj and tgt):
-            self.report({'ERROR'}, "Goal / Teach Point / Armature not set")
+            self.report({'ERROR'}, "Goal / Waypoint / Armature not set")
             return {'CANCELLED'}
 
         moved = not np.allclose(np.array(tgt.matrix_world), np.array(obj.matrix_world), atol=1e-6)
@@ -649,7 +653,7 @@ class OBJECT_OT_preview_tcp_next(bpy.types.Operator):
         p = ctx.scene.ik_motion_props
         coll = bpy.data.collections.get("Teach data")
         if not coll or not coll.objects:
-            self.report({'INFO'}, "No Teach Points")
+            self.report({'INFO'}, "No Waypoints")
             return {'CANCELLED'}
 
         lst = sorted(coll.objects, key=lambda o: o.get("index", 9999))
@@ -672,7 +676,7 @@ class OBJECT_OT_preview_tcp_prev(bpy.types.Operator):
         p = ctx.scene.ik_motion_props
         coll = bpy.data.collections.get("Teach data")
         if not coll or not coll.objects:
-            self.report({'INFO'}, "No Teach Points")
+            self.report({'INFO'}, "No Waypoints")
             return {'CANCELLED'}
 
         lst = sorted(coll.objects, key=lambda o: o.get("index", 9999))
@@ -696,14 +700,14 @@ class OBJECT_OT_toggle_motion_type(bpy.types.Operator):
         obj = p.selected_teach_point
 
         if not obj:
-            self.report({'ERROR'}, "No teach point selected")
+            self.report({'ERROR'}, "No waypoint selected")
             return {'CANCELLED'}
 
         if "motion_type" in obj:
             obj["motion_type"] = "LINEAR" if obj["motion_type"] == "JOINT" else "JOINT"
             self.report({'INFO'}, f"{obj.name} motion type set to {obj['motion_type']}")
         else:
-            self.report({'WARNING'}, "Teach point missing 'motion_type' key")
+            self.report({'WARNING'}, "Waypoint missing 'motion_type' key")
 
         return {'FINISHED'}
 
@@ -791,7 +795,6 @@ class OBJECT_OT_snap_gizmo_on_path(bpy.types.Operator):
         
 # ──────────────────────────────────────────────────────────────       
 class OBJECT_OT_apply_global_speed(bpy.types.Operator):
-    """Apply current TCP speed to all Teach Points"""
     bl_idname = "object.apply_global_speed"
     bl_label = "Apply Speed to All"
 
@@ -813,7 +816,6 @@ class OBJECT_OT_apply_global_speed(bpy.types.Operator):
         
 # ──────────────────────────────────────────────────────────────      
 class OBJECT_OT_apply_global_wait(bpy.types.Operator):
-    """Apply current TCP wait time to all Teach Points"""
     bl_idname = "object.apply_global_wait"
     bl_label = "Apply Wait Time to All"
 
@@ -903,6 +905,7 @@ class OBJECT_OT_record_tcp_from_jog(bpy.types.Operator):
         p = ctx.scene.ik_motion_props
         jog = ctx.scene.jog_props
         bones = get_BONES()
+        axes = get_AXES()
         q = []
 
         for i, bn in enumerate(bones):
@@ -912,8 +915,21 @@ class OBJECT_OT_record_tcp_from_jog(bpy.types.Operator):
         p.solutions = [q]
         p.current_index = 0
 
+        fk_func = get_forward_kinematics()
+        T_fk = fk_func(q)
+        T_world = (
+            compute_base_matrix(p)
+            @ T_fk
+            @ compute_tcp_offset_matrix(p)
+        )
+
+        giz = p.goal_object
+        if giz:
+            giz.matrix_world = Matrix(T_world)
+            giz.scale = (1, 1, 1)
+
         bpy.ops.object.record_tcp_point('INVOKE_DEFAULT')
-        p.status_text = "TCP recorded from Jog values"
+        p.status_text = "TCP recorded from Jog (FK pose)"
         return {'FINISHED'}
     
 # ──────────────────────────────────────────────────────────────   
@@ -956,11 +972,13 @@ class OBJECT_OT_keyframe_stage_joint(bpy.types.Operator):
     bl_idname = "object.keyframe_stage_joint"
     bl_label = "Insert Stage Keyframe"
 
-    name: bpy.props.StringProperty()  # e.g., "joint_y"
+    name: bpy.props.StringProperty()
 
     def execute(self, ctx):
-        p = ctx.scene.ik_motion_props
-        props = p.stage_props
+        from rteach.core.robot_presets import ROBOT_CONFIGS
+        import math
+
+        props = ctx.scene.stage_props
         value = getattr(props, self.name, None)
         obj = bpy.data.objects.get(self.name)
 
@@ -968,21 +986,35 @@ class OBJECT_OT_keyframe_stage_joint(bpy.types.Operator):
             self.report({'ERROR'}, f"Object '{self.name}' not found")
             return {'CANCELLED'}
 
-        axis = obj.get("axis", "X").upper()
+        robot = ctx.scene.ik_motion_props.robot_type
+        config = ROBOT_CONFIGS.get(robot, {})
+        stage_joints = config.get("stage_joints", [])
+
+        axis = None
+        joint_type = None
+
+        for sj in stage_joints:
+            if sj[0] == self.name:
+                axis = sj[5]  # e.g., 'z'
+                joint_type = sj[6]  # 'location' or 'rotation'
+                break
+
+        if axis is None or joint_type is None:
+            self.report({'ERROR'}, f"Joint definition not found for '{self.name}'")
+            return {'CANCELLED'}
+
+        idx = {"x": 0, "y": 1, "z": 2}.get(axis.lower(), 0)
         frame = ctx.scene.frame_current
 
-        if axis in {"X", "Y", "Z"}:
-            idx = "XYZ".index(axis)
+        if joint_type == "location":
             obj.location[idx] = value
             obj.keyframe_insert(data_path="location", frame=frame, index=idx)
-
-        elif axis in {"RX", "RY", "RZ"}:
-            idx = "XYZ".index(axis[-1])
+        elif joint_type == "rotation":
             obj.rotation_mode = 'XYZ'
             obj.rotation_euler[idx] = value
             obj.keyframe_insert(data_path="rotation_euler", frame=frame, index=idx)
 
-        self.report({'INFO'}, f"Keyframed {self.name} at frame {frame}")
+        self.report({'INFO'}, f"Keyframed {self.name} at frame {frame} ({joint_type}.{axis})")
         return {'FINISHED'}
     
 # ──────────────────────────────────────────────────────────────    
@@ -1137,6 +1169,7 @@ class OBJECT_OT_sync_robot_type(bpy.types.Operator):
     def execute(self, ctx):
         from rteach.config import settings_static as ss
         from rteach.core.robot_state import get_active_robot
+        from rteach.core.robot_presets import ROBOT_CONFIGS
 
         robot = get_active_robot()
         print(f"[DEBUG] Syncing JogProperties for robot: {robot}")
@@ -1146,7 +1179,20 @@ class OBJECT_OT_sync_robot_type(bpy.types.Operator):
         bpy.utils.register_class(ss.JogProperties)
         bpy.types.Scene.jog_props = bpy.props.PointerProperty(type=ss.JogProperties)
 
+        p = ctx.scene.ik_motion_props
+        config = ROBOT_CONFIGS.get(robot, {})
+        dof = len(config.get("axes", []))
+        n_stage = len(config.get("stage_joints", []))
+        total = dof + n_stage
+        print(f"[DEBUG] Robot DOF={dof}, stage joints={n_stage}, total plot joints={total}")
+
+        default_plot = [True] * total
+        default_plot += [False] * (32 - len(default_plot))  # pad up to 32
+
+        p.show_plot_joints = default_plot[:32]
+
         return {'FINISHED'}
+
     
 # ──────────────────────────────────────────────────────────────    
 classes = (
