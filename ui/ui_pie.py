@@ -23,7 +23,7 @@ class VIEW3D_MT_robot_step1_pie(bpy.types.Menu):
 # Shift+Q — TCP List Menu 
 # ──────────────────────────────────────────────────────────────
 class VIEW3D_MT_robot_tcp_list_pie(bpy.types.Menu):
-    bl_label = "TCP List Menu"
+    bl_label = "Waypoint List Menu"
     bl_idname = "VIEW3D_MT_robot_tcp_list_pie"
 
     def draw(self, context):
@@ -73,7 +73,7 @@ def _delayed_keymap_registration(dummy=None):
     kmi1.properties.name = "VIEW3D_MT_robot_target_pie"
 
     kmi2 = km.keymap_items.new('wm.call_menu_pie', 'Q', 'PRESS', shift=True)
-    kmi2.properties.name = "VIEW3D_MT_robot_tcp_list_pie"  # 🔄 변경됨
+    kmi2.properties.name = "VIEW3D_MT_robot_tcp_list_pie" 
 
     kmi3 = km.keymap_items.new('wm.call_menu_pie', 'Q', 'PRESS', ctrl=True)
     kmi3.properties.name = "VIEW3D_MT_robot_step1_pie"
