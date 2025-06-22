@@ -8,6 +8,7 @@ from mathutils import Matrix, Vector, Quaternion
 from scipy.spatial.transform import Rotation as R, Slerp
 from rteach.config.settings import IKMotionProperties
 from rteach.core.robot_state import get_active_robot, set_active_robot
+from rteach.core.robot_presets import ROBOT_CONFIGS
 from rteach.core.core import (
     apply_solution, get_inverse_kinematics, compute_base_matrix, 
     compute_tcp_offset_matrix, get_forward_kinematics, 
@@ -44,7 +45,7 @@ class OBJECT_OT_draw_teach_path(bpy.types.Operator):
         p = ctx.scene.ik_motion_props
         coll = bpy.data.collections.get("Teach data")
         if not coll or len(coll.objects) < 2:
-            self.report({'WARNING'}, "Need ≥2 Teach Points")
+            self.report({'WARNING'}, "Need ≥2 Waypoints")
             return {'CANCELLED'}
 
         tps = sorted(coll.objects, key=lambda o: o.get("index", 9999))
@@ -117,7 +118,7 @@ class OBJECT_OT_draw_teach_path(bpy.types.Operator):
 
 # ────────────────────────────────────────────────────────────── 
 class OBJECT_OT_tcp_move_up(bpy.types.Operator):
-    """Move Teach Point up in order"""
+    """Move Waypoint up in order"""
     bl_idname = "object.tcp_move_up"
     bl_label = "Move Up"
 
@@ -155,7 +156,7 @@ class OBJECT_OT_tcp_move_up(bpy.types.Operator):
 
 # ────────────────────────────────────────────────────────────── 
 class OBJECT_OT_tcp_move_down(bpy.types.Operator):
-    """Move Teach Point down in order"""
+    """Move Waypoint down in order"""
     bl_idname = "object.tcp_move_down"
     bl_label = "Move Down"
 
@@ -193,7 +194,7 @@ class OBJECT_OT_tcp_move_down(bpy.types.Operator):
 
 # ────────────────────────────────────────────────────────────── 
 class OBJECT_OT_tcp_delete(bpy.types.Operator):
-    """Delete selected Teach Point"""
+    """Delete selected Waypoint"""
     bl_idname = "object.tcp_delete"
     bl_label = "Delete TCP Point"
 
@@ -215,14 +216,14 @@ class OBJECT_OT_tcp_delete(bpy.types.Operator):
     
 # ────────────────────────────────────────────────────────────── 
 class OBJECT_OT_reindex_tcp_points(bpy.types.Operator):
-    """Reassign sequential index values to all Teach Points"""
+    """Reassign sequential index values to all Waypoints"""
     bl_idname = "object.reindex_tcp_points"
     bl_label = "Reindex TCP"
 
     def execute(self, ctx):
         objs = bpy.data.collections.get("Teach data", {}).objects
         if not objs:
-            self.report({'INFO'}, "No Teach Points found")
+            self.report({'INFO'}, "No Waypoints found")
             return {'CANCELLED'}
 
         sorted_objs = sorted(objs, key=lambda o: o.get("index", 9999))
@@ -232,7 +233,7 @@ class OBJECT_OT_reindex_tcp_points(bpy.types.Operator):
 
         props = ctx.scene.ik_motion_props
         props.selected_teach_point = sorted_objs[0] if sorted_objs else None
-        props.status_text = "Teach Points reindexed"
+        props.status_text = "Waypoints reindexed"
 
         return {'FINISHED'}
 
@@ -259,7 +260,7 @@ class OBJECT_OT_clear_all_tcp_points(bpy.types.Operator):
         if props.goal_object and props.goal_object.name not in bpy.data.objects:
             props.goal_object = None               
 
-        props.status_text = "All Teach Points and Path cleared"
+        props.status_text = "All Waypoints and Path cleared"
         return {'FINISHED'}
 
 # ──────────────────────────────────────────────────────────────    
@@ -379,7 +380,7 @@ class OBJECT_OT_export_teach_data(bpy.types.Operator):
             })
 
         if not data:
-            self.report({'WARNING'}, "No teach points with joint data")
+            self.report({'WARNING'}, "No waypoints with joint data")
             return {'CANCELLED'}
 
         path = Path(bpy.path.abspath("//export_teach_data.json"))
@@ -395,69 +396,75 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
     bl_label = "Export Joint Graph CSV"
 
     def execute(self, ctx):
-        from rteach.core.robot_state import get_robot_config
 
         p = ctx.scene.ik_motion_props
-        jog = ctx.scene.jog_props
         arm = bpy.data.objects.get(p.armature)
-        goal = p.goal_object
-
         if not arm:
             self.report({'ERROR'}, "No armature found")
             return {'CANCELLED'}
 
         bones = get_BONES()
         axes = get_AXES()
-        n_bones = len(bones)
+        dof = len(bones)
 
-        # Load stage joint config
-        robot_config = get_robot_config()
-        stage_joints = robot_config.get("stage_joints", [])
-        n_stage = len(stage_joints)
+        robot = get_active_robot()
+        config = ROBOT_CONFIGS.get(robot.lower(), {})
+        stage_joints = config.get("stage_joints", [])
 
         frame_start = ctx.scene.frame_start
         frame_end = ctx.scene.frame_end
         frames = list(range(frame_start, frame_end + 1))
 
-        data = []
         headers = ["frame"]
 
-        # Add joint names j1 ~ jN
-        for i in range(n_bones):
-            if p.show_plot_joints[i]:
+        for i in range(dof):
+            if i < len(p.show_plot_joints) and p.show_plot_joints[i]:
                 headers.append(f"j{i+1}")
 
-        # Add stage joint labels from config
         for i, sj in enumerate(stage_joints):
-            if p.show_plot_joints[i + n_bones]:
+            idx = dof + i
+            if idx < len(p.show_plot_joints) and p.show_plot_joints[idx]:
                 headers.append(sj.get("label", sj.get("name", f"stage_{i}")))
 
+        data = []
         for f in frames:
             bpy.context.scene.frame_set(f)
             row = [f]
 
-            # FK joints
             for i, bname in enumerate(bones):
-                if p.show_plot_joints[i]:
-                    b = arm.pose.bones.get(bname)
-                    if not b:
-                        row.append(0)
-                        continue
+                if i >= len(p.show_plot_joints) or not p.show_plot_joints[i]:
+                    continue
+                b = arm.pose.bones.get(bname)
+                if not b:
+                    row.append(0)
+                    continue
 
-                    axis = axes[i]
-                    angle = b.rotation_euler.to_quaternion().angle if b.rotation_mode == 'QUATERNION' else getattr(b.rotation_euler, axis)
-                    row.append(round(angle, 4))
+                axis = axes[i]
+                angle = (
+                    b.rotation_euler.to_quaternion().angle
+                    if b.rotation_mode == 'QUATERNION'
+                    else getattr(b.rotation_euler, axis)
+                )
+                row.append(round(angle, 4))
 
-            # Stage joints
             for i, sj in enumerate(stage_joints):
-                if p.show_plot_joints[i + n_bones]:
-                    ob = bpy.data.objects.get(sj["name"])
-                    if not ob:
-                        row.append(0)
-                        continue
+                idx = dof + i
+                if idx >= len(p.show_plot_joints) or not p.show_plot_joints[idx]:
+                    continue
 
-                    val = ob.location[0] if sj["type"] == "location" else ob.rotation_euler.to_quaternion().angle if ob.rotation_mode == 'QUATERNION' else ob.rotation_euler[0]
-                    row.append(round(val, 4))
+                ob = bpy.data.objects.get(sj["name"])
+                if not ob:
+                    row.append(0)
+                    continue
+
+                val = (
+                    ob.location[0]
+                    if sj["type"] == "location"
+                    else ob.rotation_euler.to_quaternion().angle
+                    if ob.rotation_mode == 'QUATERNION'
+                    else ob.rotation_euler[0]
+                )
+                row.append(round(val, 4))
 
             data.append(row)
 
@@ -468,7 +475,7 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
             writer.writerows(data)
 
         self.report({'INFO'}, f"Exported CSV with {len(data)} frames → {path.name}")
-        return {'FINISHED'}  
+        return {'FINISHED'}
 	    
 # ──────────────────────────────────────────────────────────────      
 class OBJECT_OT_clear_robot_system(bpy.types.Operator):
@@ -537,7 +544,8 @@ class OBJECT_OT_refresh_stage_sliders(bpy.types.Operator):
 
         self.report({'INFO'}, "Stage sliders refreshed from scene")
         return {'FINISHED'}
-
+    
+# ──────────────────────────────────────────────────────────────  
 class OBJECT_OT_refresh_tcp_list(bpy.types.Operator):
     bl_idname = "object.refresh_tcp_list"
     bl_label = "Refresh TCP List"
@@ -546,7 +554,26 @@ class OBJECT_OT_refresh_tcp_list(bpy.types.Operator):
         update_tcp_sorted_list()         
         self.report({'INFO'}, "TCP list refreshed")
         return {'FINISHED'}
-	    
+    
+# ──────────────────────────────────────────────────────────────  
+class OBJECT_OT_toggle_path_visibility(bpy.types.Operator):
+    bl_idname = "object.toggle_path_visibility"
+    bl_label = "Toggle Path Visibility"
+
+    def execute(self, ctx):
+        pv = bpy.data.collections.get("PathVisuals")
+        if not pv or not pv.objects:
+            self.report({'INFO'}, "No path to toggle")
+            return {'CANCELLED'}
+
+        for ob in pv.objects:
+            state = not ob.visible_get()
+            ob.hide_viewport = not state
+            ob.hide_set(not state)
+
+        ctx.area.tag_redraw()
+        return {'FINISHED'}
+
 # ──────────────────────────────────────────────────────────────   
 classes = (
     OBJECT_OT_clear_path_visuals,
@@ -563,4 +590,5 @@ classes = (
     OBJECT_OT_clear_robot_system,
     OBJECT_OT_refresh_stage_sliders,
     OBJECT_OT_refresh_tcp_list,
+    OBJECT_OT_toggle_path_visibility,
 )
