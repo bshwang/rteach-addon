@@ -10,11 +10,11 @@ def draw_overlay_text():
     region = bpy.context.region
     if not region:
         return
-    
+
     prefs = get_addon_prefs()
     if not prefs.show_overlay:
         return
-    
+
     p = bpy.context.scene.ik_motion_props
     if not getattr(p, "show_overlay", True):
         return
@@ -27,39 +27,48 @@ def draw_overlay_text():
 
     lines = []
 
-    if obj:
-        lines.append(f"Selected: {obj.name}")
-        if p.max_solutions > 0:
-            lines.append(f"Pose: {p.current_index+1} / {p.max_solutions}")
-        if hasattr(p, 'fixed_q3'):
-            lines.append(f"fixed_q3: {round(degrees(p.fixed_q3), 1)}°")
-    else:
-        lines.append("Selected: None")
-
     if p.status_text:
         lines.append(f"Status: {p.status_text}")
 
     if goal:
         pos = goal.location
-        lines.append(f"Goal: X={pos.x * 1000:.1f} Y={pos.y * 1000:.1f} Z={pos.z * 1000:.1f}")
         rot = goal.rotation_euler.to_matrix().to_euler()
-        lines.append(f"Rot: RX={degrees(rot.x):.1f}° RY={degrees(rot.y):.1f}° RZ={degrees(rot.z):.1f}°")
+        lines.append(
+            f"Goal: X={pos.x * 1000:.1f} Y={pos.y * 1000:.1f} Z={pos.z * 1000:.1f} "
+            f"RX={degrees(rot.x):.1f}° RY={degrees(rot.y):.1f}° RZ={degrees(rot.z):.1f}°"
+        )
 
     if obj:
+        lines.append(f"Selected: {obj.name}")
+        pose_str = f"{p.current_index+1}" if p.max_solutions > 0 else "N/A"
         motion_type = obj.get("motion_type", "?")
         speed = obj.get("speed", None)
         wait = obj.get("wait_time_sec", None)
-        lines.append(f"Motion: {motion_type}")
+
+        line = f"Pose: {pose_str} | Motion: {motion_type}"
         if speed is not None:
-            lines.append(f"Speed: {speed:.0f} mm/s")
+            line += f" | Speed: {speed:.0f} mm/s"
         if wait is not None:
-            lines.append(f"Wait: {wait:.1f} s")
+            line += f" | Wait: {wait:.1f} s"
+        lines.append(line)
+
+        if "iiwa" in p.robot_type.lower():
+            lines.append(f"fixed_q3: {round(degrees(p.fixed_q3), 1)}°")
+    else:
+        lines.append("Selected: None")
 
     font_id = 0
-    blf.size(font_id, 12)
+    dpi = bpy.context.preferences.system.dpi
+    ui_scale = bpy.context.preferences.view.ui_scale
+    ref_dpi = 72
+    scale = dpi / ref_dpi / ui_scale
+    base_size = 14
+    adjusted_size = int(base_size * scale)
+    blf.size(font_id, adjusted_size)
 
-    for i, line in enumerate(lines):
-        blf.position(font_id, 20, 40 + i * 20, 0)
+    line_spacing = int(adjusted_size * 1.5)
+    for i, line in enumerate(reversed(lines)):
+        blf.position(font_id, 20, 40 + i * line_spacing, 0)
         blf.draw(font_id, line)
 
 @persistent
@@ -76,7 +85,6 @@ def disable_overlay():
         handler_ref.clear()
         print("[Overlay] Disabled")
 
-# 애드온 등록용
 def register():
     enable_overlay()
     bpy.app.handlers.load_post.append(enable_overlay)
