@@ -147,10 +147,10 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             sub.scale_x = 1.2
             sub.prop(p, "fixed_q3_deg", text="", slider=True)
 
-        pose_box = box.box()
-        split = pose_box.split(factor=0.4, align=True)  
+        split = box.split(factor=0.4, align=True)  
         split.prop(p, "solution_index_ui", text="Index")
-        right = split.split(factor=0.7, align=True)  
+
+        right = split.split(factor=0.7, align=True)
         left_btns = right.row(align=True)
         left_btns.operator("object.cycle_pose_preview", text="◀").direction = 'PREV'
         left_btns.operator("object.cycle_pose_preview", text="▶").direction = 'NEXT'
@@ -226,24 +226,21 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
                 box.label(text="< timing props missing – legacy point >", icon='ERROR')
                 
         row = box.row(align=True)
-        row.prop(p, "bake_start_frame", text="Start Frame")
-        row.operator("screen.frame_jump", text="", icon='REW').end = False
-        row.operator("screen.frame_jump", text="", icon='FF').end = True
-        row.operator("screen.keyframe_jump", text="", icon='PREV_KEYFRAME').next = False
-        row.operator("screen.keyframe_jump", text="", icon='NEXT_KEYFRAME').next = True
+        outer_split = row.split(factor=0.8, align=True)  
 
-        row = box.row(align=True)
-        row.prop(p, "bake_all_tcp", text="Bake All TCPs")
+        left = outer_split.split(factor=0.5, align=True)  
+        col1 = left.row(align=True)
+        col1.enabled = not p.bake_all_tcp
+        col1.prop(p, "bake_start_idx", text="Start idx")
 
-        col = box.column()
-        col.enabled = not p.bake_all_tcp
-        row = col.row(align=True)
-        row.prop(p, "bake_start_idx", text="Start")
-        row.prop(p, "bake_end_idx", text="End")
+        col2 = left.row(align=True)
+        col2.enabled = not p.bake_all_tcp
+        col2.prop(p, "bake_end_idx", text="End idx")
+
+        outer_split.prop(p, "bake_all_tcp", text="All")  
 
         row = box.row(align=True)
         row.operator("object.bake_teach_sequence", text="Bake", icon='FILE_TICK')
-        row.prop(p, "precise_linear", text="", icon='CONSTRAINT', toggle=True)
         row.operator("object.clear_bake_keys", text="", icon='TRASH')
 
     def draw_stage_jog_section(self, layout, ctx):
