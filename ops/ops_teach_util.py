@@ -397,6 +397,12 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
 
     def execute(self, ctx):
 
+        from rteach.core.core import get_BONES, get_AXES
+        from rteach.core.robot_state import get_active_robot
+        from rteach.core.robot_presets import ROBOT_CONFIGS
+        import csv
+        from pathlib import Path
+
         p = ctx.scene.ik_motion_props
         arm = bpy.data.objects.get(p.armature)
         if not arm:
@@ -424,7 +430,8 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
         for i, sj in enumerate(stage_joints):
             idx = dof + i
             if idx < len(p.show_plot_joints) and p.show_plot_joints[idx]:
-                headers.append(sj.get("label", sj.get("name", f"stage_{i}")))
+                label = sj[1] if len(sj) > 1 else f"stage_{i}"
+                headers.append(label)
 
         data = []
         for f in frames:
@@ -452,14 +459,16 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
                 if idx >= len(p.show_plot_joints) or not p.show_plot_joints[idx]:
                     continue
 
-                ob = bpy.data.objects.get(sj["name"])
+                name = sj[0] if len(sj) > 0 else f"stage_{i}"
+                joint_type = sj[6] if len(sj) > 6 else "location"
+                ob = bpy.data.objects.get(name)
                 if not ob:
                     row.append(0)
                     continue
 
                 val = (
                     ob.location[0]
-                    if sj["type"] == "location"
+                    if joint_type == "location"
                     else ob.rotation_euler.to_quaternion().angle
                     if ob.rotation_mode == 'QUATERNION'
                     else ob.rotation_euler[0]
@@ -476,7 +485,7 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
 
         self.report({'INFO'}, f"Exported CSV with {len(data)} frames → {path.name}")
         return {'FINISHED'}
-	    
+
 # ──────────────────────────────────────────────────────────────      
 class OBJECT_OT_clear_robot_system(bpy.types.Operator):
     bl_idname = "object.clear_robot_system"
