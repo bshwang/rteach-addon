@@ -1171,8 +1171,9 @@ class OBJECT_OT_sync_robot_type(bpy.types.Operator):
         from rteach.core.robot_state import get_active_robot
         from rteach.core.robot_presets import ROBOT_CONFIGS
 
-        robot = get_active_robot()
-        print(f"[DEBUG] Syncing JogProperties for robot: {robot}")
+        robot_raw = get_active_robot()
+        robot = robot_raw.lower()
+        print(f"[DEBUG] Syncing JogProperties for robot: {robot_raw}")
 
         ss.unregister_static_properties()
         ss.register_static_properties(robot)
@@ -1187,13 +1188,12 @@ class OBJECT_OT_sync_robot_type(bpy.types.Operator):
         print(f"[DEBUG] Robot DOF={dof}, stage joints={n_stage}, total plot joints={total}")
 
         default_plot = [True] * total
-        default_plot += [False] * (32 - len(default_plot))  # pad up to 32
-
-        p.show_plot_joints = default_plot[:32]
+        if len(default_plot) < 14:
+            default_plot += [False] * (14 - len(default_plot))
+        p.show_plot_joints = default_plot[:14]
 
         return {'FINISHED'}
 
-    
 # ──────────────────────────────────────────────────────────────    
 classes = (
     OBJECT_OT_teach_pose,
