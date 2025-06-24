@@ -21,7 +21,8 @@ ROBOT_CONFIGS = {
             "base": "KUKA_Base",
             "tcp": "KUKA_TCP",
             "ee": "KUKA_EE"
-        }
+        },
+        "thumbnail": "resources/robot_thumbs/prb_iiwa.png"
     },
 
     "prb_ur": {
@@ -43,7 +44,8 @@ ROBOT_CONFIGS = {
             "base": "UR16e_Base",
             "tcp": "UR16e_TCP",
             "ee": "UR16e_EE"
-        }
+        },
+        "thumbnail": "resources/robot_thumbs/prb_ur.png"
     },
 
     "prb_beta": {
@@ -75,7 +77,8 @@ ROBOT_CONFIGS = {
         ],
         "setup_objects": {
             "goal": "Target_Gizmo"
-        }
+        },
+        "thumbnail": "resources/robot_thumbs/prb_beta.png"
     },
 
     "pmbot_beta": {
@@ -106,12 +109,16 @@ ROBOT_CONFIGS = {
         ],
         "setup_objects": {
             "goal": "Target_Gizmo",
-        }
+        },
+        "thumbnail": "resources/robot_thumbs/pmbot_beta.png"
     },
 
     "ur16e": {
         "armature_type": "UR",
         "armature": "UR16e_Arm",
+         "armature_solver_map": {         
+            "UR16e_Arm": "ur16e"
+        },
         "axes": ["z", "x", "x", "z", "x", "z"],
         "joint_limits_deg": [[-360, 360]] * 6,
         "stage_joints": [],
@@ -120,12 +127,16 @@ ROBOT_CONFIGS = {
             "base": "UR16e_Base",
             "tcp": "UR16e_TCP",
             "ee": "UR16e_EE"
-        }
+        },
+        "thumbnail": "resources/robot_thumbs/ur16e.png"
     },
 
     "ur5e": {
         "armature_type": "UR",
         "armature": "UR5e_Arm",
+        "armature_solver_map": {         
+            "UR5e_Arm": "ur5e"
+        },
         "axes": ["z", "x", "x", "z", "x", "z"],
         "joint_limits_deg": [[-360, 360]] * 6,
         "stage_joints": [],
@@ -134,7 +145,8 @@ ROBOT_CONFIGS = {
             "base": "UR5e_Base",
             "tcp": "UR5e_TCP",
             "ee": "UR5e_EE"
-        }
+        },
+        "thumbnail": "resources/robot_thumbs/ur5e.png"
     },
 
     "iiwa14": {
@@ -151,10 +163,10 @@ ROBOT_CONFIGS = {
             "base": "KUKA_Base",
             "tcp": "KUKA_TCP",
             "ee": "KUKA_EE"
-        }
+        },
+        "thumbnail": "resources/robot_thumbs/iiwa14.png"
     }
 }
-
 
 def get_joint_limits_deg(robot_type):
     return ROBOT_CONFIGS[robot_type.lower()]["joint_limits_deg"]
