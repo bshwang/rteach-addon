@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Robot Simulator for Blender",
     "author": "Beomsoo Hwang",
-    "version": (1, 0, 4),
+    "version": (1, 1, 0),
     "blender": (4, 3, 0),
     "location": "View3D > Sidebar > IK Solver",
     "description": "UR/KUKA robot motion teaching add-on",
@@ -16,7 +16,7 @@ addon_dir = os.path.dirname(__file__)
 if addon_dir not in sys.path:
     sys.path.append(addon_dir)
 
-from bpy.props import EnumProperty, PointerProperty
+from bpy.props import EnumProperty
 from rteach.core.core import *
 from rteach.ops.ops_teach_main import classes as main_classes
 from rteach.ops.ops_teach_util import classes as util_classes
@@ -26,10 +26,7 @@ from rteach.ui import ui_pie
 from rteach.ui import ui_overlay
 
 from rteach.config.settings import IKMotionProperties, TcpItem
-from rteach.config.settings_static import (
-    register_static_properties, unregister_static_properties, JogProperties, StageJogProperties
-)
-from rteach.core.robot_presets import ROBOT_CONFIGS
+from rteach.config.settings_static import JogProperties, StageJogProperties
 
 if not hasattr(bpy.types.Object, "motion_enum"):
     bpy.types.Object.motion_enum = EnumProperty(
@@ -79,7 +76,6 @@ class RobotSimPreferences(bpy.types.AddonPreferences):
         layout.prop(self, "show_stage")
         layout.prop(self, "show_io")
 
-
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
@@ -98,6 +94,7 @@ def unregister():
             bpy.utils.unregister_class(cls)
         except Exception:
             pass
+    bpy.utils.unregister_class(RobotSimPreferences)
     try:
         ui_pie.unregister()
         ui_overlay.unregister()
@@ -111,4 +108,3 @@ def unregister():
         del bpy.types.Scene.stage_props
     except:
         pass
-    bpy.utils.unregister_class(RobotSimPreferences)
