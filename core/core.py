@@ -5,23 +5,20 @@ from math import pi
 from scipy.spatial.transform import Rotation as R
 
 from rteach.core.robot_presets import ROBOT_CONFIGS
-from rteach.core.robot_state import get_active_robot
-
+from rteach.core.robot_state import get_armature_type
 from rteach.core.core_ur import forward_kinematics as fk_ur, inverse_kinematics as ik_ur
 from rteach.core.core_iiwa import forward_kinematics as fk_kuka, inverse_kinematics_fixed_q3 as ik_kuka
 
-# ──────────────────────────────────────────────
 def get_robot_config():
     p = bpy.context.scene.ik_motion_props
     return ROBOT_CONFIGS.get(getattr(p, "robot_type", ""), {})
 
-# ──────────────────────────────────────────────
 def get_BONES():
     config = get_robot_config()
     axes = config.get("axes")
     if axes:
         return [f"j{i+1}" for i in range(len(axes))]
-    return [] 
+    return []
 
 def get_AXES():
     config = get_robot_config()
@@ -36,18 +33,23 @@ def get_joint_limits():
 
 def get_forward_kinematics():
     p = bpy.context.scene.ik_motion_props
-    if p.robot_type.lower().startswith("ur"):
-        return fk_ur
-    else:
+    arm_type = get_armature_type(p.robot_type)
+    if arm_type == "UR":
+        return fk_ur 
+    elif arm_type == "KUKA":
         return fk_kuka
+    else:
+        raise ValueError(f"Unknown armature_type: {arm_type}")
 
 def get_inverse_kinematics(p):
-    if p.robot_type.lower().startswith("ur"):
+    arm_type = get_armature_type(p.robot_type)
+    if arm_type == "UR":
         return ik_ur
-    else:
+    elif arm_type == "KUKA":
         return lambda T: ik_kuka(T, p.fixed_q3)
+    else:
+        raise ValueError(f"Unknown armature_type: {arm_type}")
 
-# ──────────────────────────────────────────────
 def compute_base_matrix(p):
     return np.array(p.base_object.matrix_world) if p.base_object else np.eye(4)
 
@@ -63,9 +65,8 @@ def compute_tcp_offset_matrix(p):
         print(f"[ERROR] compute_tcp_offset_matrix(): {e}")
     return np.eye(4)
 
-# ──────────────────────────────────────────────
 def apply_solution(arm, q, frame, insert_keyframe=True):
-    AXES  = get_AXES()
+    AXES = get_AXES()
     BONES = get_BONES()
 
     if bpy.context.scene.frame_current != frame:
@@ -143,7 +144,7 @@ def sort_solutions(sols):
     return sorted(sols, key=score)
 
 def solve_and_apply(ctx, p, T_goal, frame, insert_keyframe=True):
-    print("🔧 [solve_and_apply] Start")
+    print("[solve_and_apply] Start")
     print("→ frame:", frame)
     print("→ insert_keyframe:", insert_keyframe)
 
@@ -162,12 +163,12 @@ def solve_and_apply(ctx, p, T_goal, frame, insert_keyframe=True):
 
     sols = [q for q in sols if np.all(q >= ll) and np.all(q <= ul)]
     
-    print(f"🧩 [IK] Solutions found: {len(sols)}")
+    print(f"[IK] Solutions found: {len(sols)}")
     for i, q in enumerate(sols):
         print(f"  ▷ sol[{i}] = {[round(a, 3) for a in q]}")
 
     if not sols:
-        print("❌ IK failed")
+        print("IK failed")
         return False
 
     def ang_diff(a, b):
@@ -180,7 +181,7 @@ def solve_and_apply(ctx, p, T_goal, frame, insert_keyframe=True):
             range(len(sols)),
             key=lambda i: sum(abs(ang_diff(sols[i][j], q_prev[j])) for j in range(min(len(sols[i]), len(q_prev))))
         )
-    elif get_active_robot().startswith("UR"):
+    elif get_armature_type(p.robot_type) == "UR":
         ss = -1 if p.shoulder == 'L' else 1
         es = -1 if p.elbow   == 'U' else 1
         ws = -1 if p.wrist   == 'I' else 1
@@ -193,7 +194,7 @@ def solve_and_apply(ctx, p, T_goal, frame, insert_keyframe=True):
     else:
         best = 0
 
-    print(f"✅ Selected solution index: {best}")
+    print(f"Selected solution index: {best}")
 
     arm = bpy.data.objects.get(p.armature)
     if not arm:
@@ -201,7 +202,6 @@ def solve_and_apply(ctx, p, T_goal, frame, insert_keyframe=True):
         return False
 
     ctx.scene.frame_set(frame)
-
     apply_solution(arm, sols[best], frame, insert_keyframe=insert_keyframe)
 
     q_sel = sols[best]
@@ -209,7 +209,7 @@ def solve_and_apply(ctx, p, T_goal, frame, insert_keyframe=True):
     T_fk = fk_func(q_sel)
     print("[DEBUG] FK result of selected solution:\n", T_fk)
 
-    print("✅ [solve_and_apply] Done")
+    print("[solve_and_apply] Done")
     return True
 
 def get_best_ik_solution(p, T_goal, q_ref=None):
@@ -218,7 +218,6 @@ def get_best_ik_solution(p, T_goal, q_ref=None):
     T_flange = np.linalg.inv(T_base) @ T_goal @ np.linalg.inv(T_offset)
 
     ik_solver = get_inverse_kinematics(p)
-    robot = p.robot_type
     sols = ik_solver(T_flange)
     if not sols:
         return None, []
@@ -229,7 +228,7 @@ def get_best_ik_solution(p, T_goal, q_ref=None):
 
     sols = [q for q in sols if np.all(q >= ll) and np.all(q <= ul)]
     
-    if not sols or len(sols) == 0:
+    if not sols:
         return None, []
 
     def ang_diff(a, b):
@@ -243,10 +242,11 @@ def get_best_ik_solution(p, T_goal, q_ref=None):
                 for j in range(min(len(sols[i]), len(q_ref)))
             )
         )
-    elif robot.lower().startswith("ur"):
+    elif get_armature_type(p.robot_type) == "UR":
         ss = -1 if p.shoulder == 'L' else 1
         es = -1 if p.elbow == 'U' else 1
         ws = -1 if p.wrist == 'I' else 1
+
         def score(q):
             return ((math.copysign(1, q[0]) == ss) +
                     (math.copysign(1, q[2]) == es) +
