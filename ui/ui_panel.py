@@ -216,6 +216,12 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row.operator("object.record_tcp_from_jog", text="Waypoint", icon='EMPTY_AXIS')
         row.operator("object.go_home_pose", text="Home", icon='HOME')
 
+        icon = 'CHECKBOX_HLT' if p.show_workspace else 'CHECKBOX_DEHLT'
+        row = box.row()
+        row.prop(p, "show_workspace", text="Show Workspace", toggle=True, icon=icon)
+
+
+
     def draw_step1(self, L, ctx):
 
         p = ctx.scene.ik_motion_props
