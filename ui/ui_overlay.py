@@ -3,6 +3,7 @@ import blf
 from bpy.app.handlers import persistent
 from math import degrees
 from rteach.ui.ui_panel import get_addon_prefs
+from rteach.core.robot_state import get_armature_type
 
 handler_ref = []
 
@@ -52,7 +53,7 @@ def draw_overlay_text():
             line += f" | Wait: {wait:.1f} s"
         lines.append(line)
 
-        if "iiwa" in p.robot_type.lower():
+        if get_armature_type(p.robot_type) == "KUKA":
             lines.append(f"fixed_q3: {round(degrees(p.fixed_q3), 1)}°")
     else:
         lines.append("Selected: None")
