@@ -4,6 +4,7 @@ import bpy
 from bpy.utils import previews
 from rteach.core.core import get_BONES, get_joint_limits
 from rteach.core.robot_presets import ROBOT_CONFIGS
+from rteach.core.robot_state import get_armature_type
 
 preview_collections = {}
 
@@ -216,7 +217,6 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row.operator("object.go_home_pose", text="Home", icon='HOME')
 
     def draw_step1(self, L, ctx):
-        from rteach.core.robot_state import get_armature_type
 
         p = ctx.scene.ik_motion_props
         box = L.box()
@@ -329,6 +329,9 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         col2.prop(p, "bake_end_idx", text="End idx")
 
         outer_split.prop(p, "bake_all_tcp", text="All")
+
+        row = box.row(align=True)
+        row.prop(p, "bake_start_frame", text="Start Frame")
 
         row = box.row(align=True)
         row.operator("object.bake_teach_sequence", text="Bake", icon='FILE_TICK')
