@@ -2,36 +2,45 @@ import bpy
 import math
 import json
 import csv
+import re
 
 import numpy as np
-from mathutils import Matrix, Vector, Quaternion
-from scipy.spatial.transform import Rotation as R, Slerp
-from rteach.config.settings import IKMotionProperties
-from rteach.core.robot_state import get_active_robot, set_active_robot
-from rteach.core.robot_presets import ROBOT_CONFIGS
-from rteach.core.core import (
-    apply_solution, get_inverse_kinematics, compute_base_matrix, 
-    compute_tcp_offset_matrix, get_forward_kinematics, 
-    sort_solutions, get_BONES, get_AXES, get_best_ik_solution,
-)
-from rteach.core.core_iiwa import linear_move
 from pathlib import Path
+from mathutils import Vector
+from rteach.core.robot_presets import ROBOT_CONFIGS
+from rteach.core.core import get_forward_kinematics, get_BONES, get_AXES
+
+def find_object_by_prefix(name: str) -> bpy.types.Object | None:
+    """
+    Find best matching object whose name starts with `name`,
+    preferring the one with the highest numeric suffix (e.g., .002 > .001 > none).
+    """
+    def extract_suffix_index(n):
+        match = re.match(rf"^{re.escape(name)}(?:\.(\d+))?$", n)
+        return int(match.group(1)) if match and match.group(1) else -1
+
+    matches = [obj for obj in bpy.data.objects if obj.name.startswith(name)]
+    if not matches:
+        return None
+
+    best = max(matches, key=lambda obj: extract_suffix_index(obj.name))
+    return best
 
 # ──────────────────────────────────────────────────────────────
 class OBJECT_OT_clear_path_visuals(bpy.types.Operator):
-	bl_idname = "object.clear_path_visuals"
-	bl_label = "Clear Teach Path"
+    bl_idname = "object.clear_path_visuals"
+    bl_label = "Clear Teach Path"
 
-	def execute(self, ctx):	
-	    pv = bpy.data.collections.get("PathVisuals")	
-	    if not pv:	
-	        self.report({'INFO'}, "No PathVisuals")	
-	        return {'CANCELLED'}	
-	    for ob in pv.objects:	
-	        ob.hide_viewport = True	
-	        ob.hide_set(True)
-	    self.report({'INFO'}, "Path hidden")	
-	    return {'FINISHED'}
+    def execute(self, ctx):    
+        pv = bpy.data.collections.get("PathVisuals")
+        if not pv:
+            self.report({'INFO'}, "No PathVisuals")
+            return {'CANCELLED'}
+        for ob in pv.objects:
+            ob.hide_viewport = True
+            ob.hide_set(True)
+        self.report({'INFO'}, "Path hidden")
+        return {'FINISHED'}
 
 # ──────────────────────────────────────────────────────────────    
 class OBJECT_OT_draw_teach_path(bpy.types.Operator):
@@ -50,7 +59,6 @@ class OBJECT_OT_draw_teach_path(bpy.types.Operator):
 
         tps = sorted(coll.objects, key=lambda o: o.get("index", 9999))
 
-        # 컬렉션 생성 또는 재활용
         col_name = "PathVisuals"
         pv = bpy.data.collections.get(col_name) or bpy.data.collections.new(col_name)
         if pv.name not in {c.name for c in ctx.scene.collection.children}:
@@ -396,13 +404,6 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
     bl_label = "Export Joint Graph CSV"
 
     def execute(self, ctx):
-
-        from rteach.core.core import get_BONES, get_AXES
-        from rteach.core.robot_state import get_active_robot
-        from rteach.core.robot_presets import ROBOT_CONFIGS
-        import csv
-        from pathlib import Path
-
         p = ctx.scene.ik_motion_props
         arm = bpy.data.objects.get(p.armature)
         if not arm:
@@ -413,8 +414,8 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
         axes = get_AXES()
         dof = len(bones)
 
-        robot = get_active_robot()
-        config = ROBOT_CONFIGS.get(robot.lower(), {})
+        robot_key = p.robot_type.lower()
+        config = ROBOT_CONFIGS.get(robot_key, {})
         stage_joints = config.get("stage_joints", [])
 
         frame_start = ctx.scene.frame_start
@@ -582,7 +583,40 @@ class OBJECT_OT_toggle_path_visibility(bpy.types.Operator):
 
         ctx.area.tag_redraw()
         return {'FINISHED'}
+    
+# ──────────────────────────────────────────────────────────────     
+class OBJECT_OT_cycle_armature_set(bpy.types.Operator):
+    bl_idname = "object.cycle_armature_set"
+    bl_label = "Cycle Armature Set"
 
+    def execute(self, ctx):
+        p = ctx.scene.ik_motion_props
+        from rteach.core.robot_presets import ROBOT_CONFIGS
+        config = ROBOT_CONFIGS.get(p.robot_type.lower(), {})
+        sets = config.get("armature_sets", {})
+
+        if not sets:
+            self.report({'ERROR'}, "No armature sets defined")
+            return {'CANCELLED'}
+
+        keys = list(sets.keys())
+        if not keys:
+            self.report({'ERROR'}, "Empty armature set list")
+            return {'CANCELLED'}
+
+        current = p.armature
+        idx = keys.index(current) if current in keys else -1
+        next_key = keys[(idx + 1) % len(keys)]
+
+        cfg = sets[next_key]
+        p.armature = next_key
+        p.base_object = find_object_by_prefix(cfg.get("base", ""))
+        p.ee_object = find_object_by_prefix(cfg.get("ee", ""))
+        p.tcp_object = find_object_by_prefix(cfg.get("tcp", ""))
+
+        self.report({'INFO'}, f"Switched to: {next_key}")
+        return {'FINISHED'}
+    
 # ──────────────────────────────────────────────────────────────   
 classes = (
     OBJECT_OT_clear_path_visuals,
@@ -600,4 +634,5 @@ classes = (
     OBJECT_OT_refresh_stage_sliders,
     OBJECT_OT_refresh_tcp_list,
     OBJECT_OT_toggle_path_visibility,
+    OBJECT_OT_cycle_armature_set,
 )
