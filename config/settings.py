@@ -230,6 +230,13 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         default=False,
         description="Show or hide the robot selection grid"
     )
+    
+    show_workspace: bpy.props.BoolProperty(
+        name="Show Workspace",
+        default=False,
+        description="Toggle workspace mesh visibility",
+        update=lambda self, ctx: bpy.ops.object.toggle_workspace_visibility()
+    )
 
     bake_start_frame: bpy.props.IntProperty(
         name="Start Frame",
