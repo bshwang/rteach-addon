@@ -1,7 +1,7 @@
 import bpy
 from rteach.config.settings import IKMotionProperties
 from rteach.config.settings_static import JogProperties, StageJogProperties
-from rteach.core.robot_state import get_active_robot
+from rteach.core.robot_state import get_armature_type
 from rteach.core.core import get_BONES, get_joint_limits
 from rteach.core.robot_presets import ROBOT_CONFIGS
 
@@ -41,22 +41,32 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
     def draw_robot_selector(self, L, ctx):
         p = ctx.scene.ik_motion_props
         row = L.row(align=True)
-        row.prop(p, "robot_type", text="")
+        row.label(text=p.robot_type)        
         row.operator("object.import_robot_system", text="", icon='APPEND_BLEND')
         row.operator("object.clear_robot_system", text="", icon='TRASH')
-        row.operator("object.sync_robot_type", icon='FILE_REFRESH')
+        row.operator("object.sync_robot_type", text="Sync", icon='FILE_REFRESH')
 
     def draw_setup_section(self, L, ctx):
         p = ctx.scene.ik_motion_props
+        config = ROBOT_CONFIGS.get(p.robot_type.lower(), {})
         box = L.box()
+
         row = box.row()
         icon = 'TRIA_DOWN' if p.show_setup else 'TRIA_RIGHT'
         row.prop(p, "show_setup", icon=icon, text="Setup", emboss=False)
-        if p.show_setup:
-            box.prop(p, "armature", text="Armature")
-            box.prop(p, "base_object", text="Robot Base")
-            box.prop(p, "ee_object", text="Flange")
-            box.prop(p, "tcp_object", text="TCP")
+
+        if not p.show_setup:
+            return
+
+        box.prop(p, "armature", text="Armature")
+        box.prop(p, "base_object", text="Robot Base")
+        box.prop(p, "ee_object", text="Flange")
+        box.prop(p, "tcp_object", text="TCP")
+
+        if config.get("armature_sets"):
+            row = box.row(align=True)
+            row.label(text="Quick Switch:")
+            row.operator("object.cycle_armature_set", text="⟳ Switch Robot")
 
     def draw_target_section(self, L, ctx):
         p = ctx.scene.ik_motion_props
@@ -128,6 +138,8 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row.operator("object.go_home_pose", text="Home", icon='HOME')
 
     def draw_step1(self, L, ctx):
+        from rteach.core.robot_state import get_armature_type
+
         p = ctx.scene.ik_motion_props
         box = L.box()
         row = box.row()
@@ -139,15 +151,15 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row = box.row(align=True)
         row.operator("object.teach_pose", text="Go To", icon='VIEW_CAMERA')
         row.prop(p, "auto_record", text="", toggle=True, icon='REC')
-        row = box.row(align=True)
-        if p.robot_type == "iiwa14":
+
+        if get_armature_type(p.robot_type) == "KUKA":
             row = box.row(align=True)
             row.label(text="R angle(q3)")
             sub = row.row()
             sub.scale_x = 1.2
             sub.prop(p, "fixed_q3_deg", text="", slider=True)
 
-        split = box.split(factor=0.4, align=True)  
+        split = box.split(factor=0.4, align=True)
         split.prop(p, "solution_index_ui", text="Index")
 
         right = split.split(factor=0.7, align=True)
@@ -198,6 +210,8 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.operator("object.snap_gizmo_on_path", text="Move Gizmo")
 
     def draw_step3(self, L, ctx):
+        from rteach.core.robot_state import get_armature_type
+
         p = ctx.scene.ik_motion_props
         obj = p.selected_teach_point
         box = L.box()
@@ -206,7 +220,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row.prop(p, "show_step3", icon=icon, text="Step 3: Bake Motion", emboss=False)
         if not p.show_step3:
             return
-        
+
         if obj:
             box.separator()
             box.label(text=f"Selected: {obj.name}", icon='PINNED')
@@ -224,11 +238,11 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
                 row.operator("object.apply_global_wait", text="", icon='PASTEDOWN')
             else:
                 box.label(text="< timing props missing – legacy point >", icon='ERROR')
-                
-        row = box.row(align=True)
-        outer_split = row.split(factor=0.8, align=True)  
 
-        left = outer_split.split(factor=0.5, align=True)  
+        row = box.row(align=True)
+        outer_split = row.split(factor=0.8, align=True)
+
+        left = outer_split.split(factor=0.5, align=True)
         col1 = left.row(align=True)
         col1.enabled = not p.bake_all_tcp
         col1.prop(p, "bake_start_idx", text="Start idx")
@@ -237,7 +251,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         col2.enabled = not p.bake_all_tcp
         col2.prop(p, "bake_end_idx", text="End idx")
 
-        outer_split.prop(p, "bake_all_tcp", text="All")  
+        outer_split.prop(p, "bake_all_tcp", text="All")
 
         row = box.row(align=True)
         row.operator("object.bake_teach_sequence", text="Bake", icon='FILE_TICK')
