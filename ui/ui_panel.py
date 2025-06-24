@@ -1,12 +1,52 @@
+import os
 import bpy
-from rteach.config.settings import IKMotionProperties
-from rteach.config.settings_static import JogProperties, StageJogProperties
-from rteach.core.robot_state import get_armature_type
+
+from bpy.utils import previews
 from rteach.core.core import get_BONES, get_joint_limits
 from rteach.core.robot_presets import ROBOT_CONFIGS
 
+preview_collections = {}
+
+def get_robot_preview(robot_key):
+    if "robot_thumbs" not in preview_collections:
+        print("[WARN] robot_thumbs not found — creating preview collection")
+        pcoll = previews.new()
+        preview_collections["robot_thumbs"] = pcoll
+    else:
+        pcoll = preview_collections["robot_thumbs"]
+
+    config = ROBOT_CONFIGS.get(robot_key, {})
+    thumb_rel_path = config.get("thumbnail", "")
+    addon_dir = os.path.dirname(os.path.dirname(__file__))
+    thumb_abs_path = os.path.join(addon_dir, thumb_rel_path)
+
+    if not os.path.exists(thumb_abs_path):
+        print(f"[ERROR] Thumbnail not found: {thumb_abs_path}")
+        return None
+
+    if robot_key not in pcoll:
+        try:
+            pcoll.load(robot_key, thumb_abs_path, 'IMAGE')
+            print(f"[OK] Loaded thumbnail for {robot_key}")
+        except Exception as e:
+            print(f"[FAIL] Failed to load thumbnail for {robot_key}: {e}")
+            return None
+
+    return pcoll.get(robot_key)
+
 def get_addon_prefs():
     return bpy.context.preferences.addons["rteach"].preferences
+
+class OBJECT_OT_import_robot_from_grid(bpy.types.Operator):
+    bl_idname = "object.import_robot_from_grid"
+    bl_label = "Import Robot"
+    bl_options = {'INTERNAL'}
+
+    robot_key: bpy.props.StringProperty()
+
+    def execute(self, context):
+        bpy.ops.object.import_robot_system('EXEC_DEFAULT', system=self.robot_key)
+        return {'FINISHED'}
 
 class UI_UL_tcp_list(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
@@ -40,11 +80,49 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
 
     def draw_robot_selector(self, L, ctx):
         p = ctx.scene.ik_motion_props
-        row = L.row(align=True)
-        row.label(text=p.robot_type)        
-        row.operator("object.import_robot_system", text="", icon='APPEND_BLEND')
-        row.operator("object.clear_robot_system", text="", icon='TRASH')
+        config = ROBOT_CONFIGS.get(p.robot_type.lower(), {})
+
+        box = L.box()
+        box.label(text="Robot Selector")
+
+        box.prop(p, "show_robot_library", text="Show Library", toggle=True, icon='ASSET_MANAGER')
+
+        row = box.row(align=True)
+        row.label(text=p.robot_type)
+        row.operator("object.clear_robot_system", text="Clear", icon='TRASH')
         row.operator("object.sync_robot_type", text="Sync", icon='FILE_REFRESH')
+
+        if not p.show_robot_library:
+            return
+
+        robot_keys = list(ROBOT_CONFIGS.keys())
+        cols = 2
+        rows = (len(robot_keys) + cols - 1) // cols
+
+        for r in range(rows):
+            row = box.row(align=True)
+            for c in range(cols):
+                i = r * cols + c
+                col = row.column(align=True)
+
+                if i >= len(robot_keys):
+                    col.label(text="")
+                    continue
+
+                key = robot_keys[i]
+                robot_cfg = ROBOT_CONFIGS[key]
+                thumb = get_robot_preview(key)
+
+                colbox = col.box()
+
+                if thumb:
+                    colbox.template_icon(icon_value=thumb.icon_id, scale=6.0)
+                else:
+                    colbox.label(text="(No image)")
+
+                label = robot_cfg.get("armature", key)
+                op = colbox.operator("object.import_robot_from_grid", text=label, icon='IMPORT')
+                op.robot_key = key
 
     def draw_setup_section(self, L, ctx):
         p = ctx.scene.ik_motion_props
@@ -210,7 +288,6 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.operator("object.snap_gizmo_on_path", text="Move Gizmo")
 
     def draw_step3(self, L, ctx):
-        from rteach.core.robot_state import get_armature_type
 
         p = ctx.scene.ik_motion_props
         obj = p.selected_teach_point
@@ -323,4 +400,5 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
 classes = [
     UI_UL_tcp_list,
     VIEW3D_PT_ur_ik,
+    OBJECT_OT_import_robot_from_grid,
 ]
