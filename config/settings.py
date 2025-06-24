@@ -224,6 +224,12 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         description="Display overlay text in 3D View",
         default=True
     )
+    
+    show_robot_library: bpy.props.BoolProperty(
+        name="Show Robot Library",
+        default=False,
+        description="Show or hide the robot selection grid"
+    )
 
     bake_start_frame: bpy.props.IntProperty(
         name="Start Frame",
