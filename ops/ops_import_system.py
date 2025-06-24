@@ -68,7 +68,7 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
         def delayed_sync():
             print("[DEBUG] Delayed sync_robot_type triggered")
             bpy.ops.object.sync_robot_type('INVOKE_DEFAULT')
-            return None  # stop repeating
+            return None  
 
         bpy.app.timers.register(delayed_sync, first_interval=0.5)
 
