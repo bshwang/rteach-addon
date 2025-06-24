@@ -4,7 +4,6 @@ from rteach.core.robot_presets import ROBOT_CONFIGS, get_joint_limits_deg
 
 MAX_JOINTS = 10
 
-
 # ──────────────────────────────────────────────────────────────
 # Dynamic Jog slider (robot joints)
 # ──────────────────────────────────────────────────────────────
@@ -12,7 +11,6 @@ class JogProperties(bpy.types.PropertyGroup):
     pass
 
 JogProperties.__annotations__ = {}
-
 
 def get_robot_axes(robot_type: str = ""):
     """
@@ -22,7 +20,6 @@ def get_robot_axes(robot_type: str = ""):
     config = ROBOT_CONFIGS.get(robot_type.lower(), {})
     return config.get("axes", ["y"] * MAX_JOINTS)
 
-
 def get_joint_limits(robot_type: str = ""):
     """
     Return joint‑limit list (deg) for given robot_type.  
@@ -30,7 +27,6 @@ def get_joint_limits(robot_type: str = ""):
     """
     config = ROBOT_CONFIGS.get(robot_type.lower(), {})
     return config.get("joint_limits_deg", [[-180, 180]] * MAX_JOINTS)
-
 
 def _make_joint_getter(i):
     def getter(self):
@@ -46,7 +42,6 @@ def _make_joint_getter(i):
             return 0.0
         return getattr(bone.rotation_euler, axes[i])
     return getter
-
 
 def _make_joint_setter(i):
     def setter(self, value):
@@ -65,7 +60,6 @@ def _make_joint_setter(i):
         bpy.context.view_layer.update()
     return setter
 
-
 # create default (placeholder) joint sliders so add‑on can register even
 # before a robot is selected
 for i in range(MAX_JOINTS):
@@ -78,7 +72,6 @@ for i in range(MAX_JOINTS):
         get=_make_joint_getter(i),
         set=_make_joint_setter(i),
     )
-
 
 # ──────────────────────────────────────────────────────────────
 # Dynamic Stage‑jog sliders (external axes)
