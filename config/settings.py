@@ -307,6 +307,3 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         except: return []
     @temp_solutions.setter
     def temp_solutions(self, v): self.ik_temp_solutions = json.dumps(v)
-    
-
-
