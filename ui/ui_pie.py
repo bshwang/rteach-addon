@@ -46,11 +46,13 @@ class VIEW3D_MT_robot_target_pie(bpy.types.Menu):
 
     def draw(self, context):
         pie = self.layout.menu_pie()
+        props = context.scene.ik_motion_props
+
         pie.operator("object.focus_on_target", text="Select", icon='RESTRICT_SELECT_OFF')
         pie.operator("object.snap_target_to_fk", text="Snap to FK", icon='CONSTRAINT')
         pie.operator("object.setup_tcp_from_gizmo", text="Set as TCP", icon='EMPTY_ARROWS')
         pie.operator("object.snap_goal_to_active", text="Snap to Active", icon='PIVOT_ACTIVE')
-
+        pie.prop(context.scene.ik_motion_props, "show_workspace", text="Show Workspace", toggle=True, icon='SHADING_WIRE')
 
 # ──────────────────────────────────────────────────────────────
 classes = (
