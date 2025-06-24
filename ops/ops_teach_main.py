@@ -1268,6 +1268,28 @@ class OBJECT_OT_sync_robot_type(bpy.types.Operator):
 
         return {'FINISHED'}
     
+# ──────────────────────────────────────────────────────────────
+class OBJECT_OT_toggle_workspace_visibility(bpy.types.Operator):
+    bl_idname = "object.toggle_workspace_visibility"
+    bl_label = "Toggle Workspace Visibility"
+
+    def execute(self, ctx):
+        p = ctx.scene.ik_motion_props
+        robot_key = p.robot_type.lower()
+        obj_name = f"Workspace_{robot_key}"
+
+        obj = bpy.data.objects.get(obj_name)
+        if not obj:
+            self.report({'WARNING'}, f"Workspace object '{obj_name}' not found")
+            return {'CANCELLED'}
+
+        obj.hide_viewport = not p.show_workspace
+        obj.hide_render = not p.show_workspace
+        obj.hide_set(not p.show_workspace)
+
+        self.report({'INFO'}, f"{'Shown' if p.show_workspace else 'Hidden'}: {obj_name}")
+        return {'FINISHED'}
+
 # ──────────────────────────────────────────────────────────────    
 classes = (
     OBJECT_OT_teach_pose,
@@ -1294,4 +1316,5 @@ classes = (
     OBJECT_OT_go_home_pose,
     OBJECT_OT_setup_tcp_from_gizmo,
     OBJECT_OT_sync_robot_type,
+    OBJECT_OT_toggle_workspace_visibility,
 )
