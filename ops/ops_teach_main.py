@@ -1,21 +1,20 @@
 import bpy
 import math
-import bmesh
-import json
 
 import numpy as np, math
-from mathutils import Matrix, Vector, Quaternion, Euler
+
+from mathutils import Matrix, Euler
 from scipy.spatial.transform import Rotation as R, Slerp
-from rteach.config.settings import IKMotionProperties
-from rteach.core.robot_state import get_active_robot, set_active_robot
+from rteach.core.robot_state import get_armature_type
 from rteach.core.core import (
     apply_solution, get_inverse_kinematics, compute_base_matrix, 
-    compute_tcp_offset_matrix, get_forward_kinematics, solve_and_apply,
-    sort_solutions, get_BONES, get_AXES, get_best_ik_solution
+    compute_tcp_offset_matrix, get_forward_kinematics, 
+    get_BONES, get_AXES, get_best_ik_solution
 )
-from rteach.ops.ops_teach_util import update_tcp_sorted_list
 from rteach.core.core_iiwa import linear_move
-from pathlib import Path
+from rteach.ops.ops_teach_util import update_tcp_sorted_list, find_object_by_prefix
+from rteach.config import settings_static as ss
+from rteach.core.robot_presets import ROBOT_CONFIGS
 
 # ──────────────────────────────────────────────────────────────
 class OBJECT_OT_teach_pose(bpy.types.Operator):
@@ -98,15 +97,12 @@ class OBJECT_OT_execute_linear_motion(bpy.types.Operator):
             self.report({'ERROR'}, "Armature not found")
             return {'CANCELLED'}
 
-        robot   = get_active_robot()
         dof     = len(get_BONES())
         frame0  = ctx.scene.frame_current
         steps   = max(1, int(p.linear_frames))
 
-        # ✅ Precise LIN (iiwa14)
-        if robot == "iiwa14" and p.precise_linear and src.get("joint_pose"):
-            from rteach.core.core_iiwa import linear_move
-
+        # Precise LIN
+        if get_armature_type(p.robot_type) == "KUKA" and p.precise_linear and src.get("joint_pose"):
             q_init = np.array(sanitize_q(src["joint_pose"], dof), float)
             T_goal = (
                 np.linalg.inv(compute_base_matrix(p))
@@ -124,7 +120,6 @@ class OBJECT_OT_execute_linear_motion(bpy.types.Operator):
 
             self.report({'WARNING'}, "Precise LIN failed – fallback to fast mode")
 
-        # ────────────────────────────────
         # Fast LIN
         M_start, M_end = map(np.array, (src.matrix_world, dst.matrix_world))
         pos_series = np.linspace(M_start[:3, 3], M_end[:3, 3], steps)
@@ -215,6 +210,7 @@ def sanitize_q(q_raw, dof):
     q = list(q_raw)
     return (q + [0.0] * dof)[:dof]
 
+# ──────────────────────────────────────────────────────────────
 class OBJECT_OT_record_tcp_point(bpy.types.Operator):
     bl_idname = "object.record_tcp_point"
     bl_label  = "Record Goal"
@@ -362,7 +358,7 @@ class OBJECT_OT_apply_preview_pose(bpy.types.Operator):
         obj["joint_pose"] = list(map(float, q_sel))
         obj["solution_index"] = p.current_index
 
-        if get_active_robot() == "iiwa14":
+        if get_armature_type(p.robot_type) == "KUKA":
             obj["fixed_q3"] = p.fixed_q3
 
         p.status_text = f"Keyframed {p.current_index+1}/{len(p.solutions)}"
@@ -439,9 +435,7 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
 
             if motion == "LINEAR":
 
-                robot = get_active_robot()
-
-                if robot == "iiwa14" and p.precise_linear:
+                if get_armature_type(p.robot_type) == "KUKA" and p.precise_linear:
                     q_start_raw = tp.get("joint_pose")
                     q_start = np.asarray(q_start_raw, float) if q_start_raw else None
 
@@ -476,7 +470,7 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
                             f += len(path)
                             continue
 
-                    if robot == "iiwa14":
+                    if get_armature_type(p.robot_type) == "KUKA":
                         p.fixed_q3 = float(tp.get("fixed_q3", p.fixed_q3))
 
                 p.goal_object   = giz
@@ -530,7 +524,6 @@ class OBJECT_OT_update_tcp_pose(bpy.types.Operator):
         moved = not np.allclose(np.array(tgt.matrix_world), np.array(obj.matrix_world), atol=1e-6)
 
         if moved:
-            # Gizmo → TCP
             obj.matrix_world = tgt.matrix_world.copy()
             obj.scale *= 0.5
 
@@ -545,8 +538,6 @@ class OBJECT_OT_update_tcp_pose(bpy.types.Operator):
                 q_sel, sols = get_best_ik_solution(p, T_goal, q_ref=q_ref)
 
             apply_solution(arm, q_sel, ctx.scene.frame_current, insert_keyframe=False)
-
-            # 🛠 안전하게 인덱스 찾기
             found_index = None
             for i, sol in enumerate(sols):
                 if np.allclose(sol, q_sel, atol=1e-6):
@@ -558,7 +549,7 @@ class OBJECT_OT_update_tcp_pose(bpy.types.Operator):
             obj["solution_index"] = found_index
             obj["joint_pose"]     = q_sel.tolist()
 
-            if get_active_robot() == "iiwa14":
+            if get_armature_type(p.robot_type) == "KUKA":
                 p.fixed_q3 = q_sel[2]
                 obj["fixed_q3"] = p.fixed_q3
 
@@ -567,13 +558,12 @@ class OBJECT_OT_update_tcp_pose(bpy.types.Operator):
             p.status_text = f"{obj.name} updated from Gizmo"
 
         else:
-            # TCP → Gizmo (Preview)
             tgt.matrix_world = obj.matrix_world.copy()
             tgt.scale        = (1, 1, 1)
             if "joint_pose" in obj:
                 q_stored = obj["joint_pose"]
                 apply_solution(arm, q_stored, ctx.scene.frame_current, insert_keyframe=False)
-                if get_active_robot() == "iiwa14":
+                if get_armature_type(p.robot_type) == "KUKA":
                     p.fixed_q3 = q_stored[2]
                 p.current_index     = int(obj.get("solution_index", 0))
                 p.solution_index_ui = p.current_index + 1
@@ -724,12 +714,10 @@ class OBJECT_OT_clear_bake_keys(bpy.types.Operator):
         arm  = bpy.data.objects.get(p.armature)
         goal = p.goal_object
 
-        # armature key 삭제
         if arm and arm.animation_data and arm.animation_data.action:
             for fc in list(arm.animation_data.action.fcurves):
                 arm.animation_data.action.fcurves.remove(fc)
 
-        # gizmo (goal_object) key 삭제
         if goal and goal.animation_data and goal.animation_data.action:
             for fc in list(goal.animation_data.action.fcurves):
                 goal.animation_data.action.fcurves.remove(fc)
@@ -959,7 +947,7 @@ class OBJECT_OT_recompute_selected_tcp(bpy.types.Operator):
             obj["joint_pose"] = q_sel.tolist()
             obj["solution_index"] = sols.index(q_sel) if q_sel in sols else 0
 
-            if get_active_robot() == "iiwa14":
+            if get_armature_type(p.robot_type) == "KUKA":
                 obj["fixed_q3"] = q_sel[2]
 
             count += 1
@@ -975,9 +963,6 @@ class OBJECT_OT_keyframe_stage_joint(bpy.types.Operator):
     name: bpy.props.StringProperty()
 
     def execute(self, ctx):
-        from rteach.core.robot_presets import ROBOT_CONFIGS
-        import math
-
         props = ctx.scene.stage_props
         value = getattr(props, self.name, None)
         obj = bpy.data.objects.get(self.name)
@@ -995,8 +980,8 @@ class OBJECT_OT_keyframe_stage_joint(bpy.types.Operator):
 
         for sj in stage_joints:
             if sj[0] == self.name:
-                axis = sj[5]  # e.g., 'z'
-                joint_type = sj[6]  # 'location' or 'rotation'
+                axis = sj[5]  
+                joint_type = sj[6] 
                 break
 
         if axis is None or joint_type is None:
@@ -1116,7 +1101,6 @@ class OBJECT_OT_setup_tcp_from_gizmo(bpy.types.Operator):
             self.report({'ERROR'}, "EE or Target Gizmo not set")
             return {'CANCELLED'}
 
-        robot       = get_active_robot()
         vis_name, real_name = "TCP_visible", "TCP"
 
         for nm in (vis_name, real_name):
@@ -1132,7 +1116,7 @@ class OBJECT_OT_setup_tcp_from_gizmo(bpy.types.Operator):
 
         v_local = ee_mat.inverted() @ tgt_loc   
 
-        if robot == "iiwa14":
+        if get_armature_type(p.robot_type) == "KUKA":
             R_corr3    = Euler((0, math.radians(90), 0), 'XYZ').to_matrix()
             v_corr     = R_corr3 @ v_local
             final_rot3 = tgt_rot3 @ R_corr3
@@ -1167,20 +1151,16 @@ class OBJECT_OT_sync_robot_type(bpy.types.Operator):
     bl_label = "Sync Robot Type"
 
     def execute(self, ctx):
-        from rteach.config import settings_static as ss
-        from rteach.core.robot_state import get_active_robot
-        from rteach.core.robot_presets import ROBOT_CONFIGS
 
-        robot_raw = get_active_robot()
-        robot = robot_raw.lower()
-        print(f"[DEBUG] Syncing JogProperties for robot: {robot_raw}")
+        p = ctx.scene.ik_motion_props
+        robot = p.robot_type.lower()
+        print(f"[DEBUG] Syncing JogProperties for robot: {robot}")
 
         ss.unregister_static_properties()
         ss.register_static_properties(robot)
         bpy.utils.register_class(ss.JogProperties)
         bpy.types.Scene.jog_props = bpy.props.PointerProperty(type=ss.JogProperties)
 
-        p = ctx.scene.ik_motion_props
         config = ROBOT_CONFIGS.get(robot, {})
         dof = len(config.get("axes", []))
         n_stage = len(config.get("stage_joints", []))
@@ -1192,8 +1172,32 @@ class OBJECT_OT_sync_robot_type(bpy.types.Operator):
             default_plot += [False] * (14 - len(default_plot))
         p.show_plot_joints = default_plot[:14]
 
-        return {'FINISHED'}
+        setup = config.get("setup_objects", {})
+        for key in ["goal", "base", "tcp", "ee"]:
+            name = setup.get(key)
+            if not isinstance(name, str) or not name.strip():
+                print(f"[SYNC] Skipping {key}_object (name missing)")
+                continue
+            obj = find_object_by_prefix(name)
+            if obj:
+                setattr(p, f"{key}_object", obj)
+                print(f"[SYNC] {key}_object → {obj.name}")
+            else:
+                print(f"[SYNC] {key}_object not found (name='{name}')")
 
+        arm_sets = config.get("armature_sets", {})
+        arm_name = getattr(p, "armature", "")
+        if arm_name in arm_sets:
+            print(f"[SYNC] Applying armature_set: {arm_name}")
+            arm_cfg = arm_sets[arm_name]
+            p.base_object = find_object_by_prefix(arm_cfg.get("base", ""))
+            p.ee_object   = find_object_by_prefix(arm_cfg.get("ee", ""))
+            p.tcp_object  = find_object_by_prefix(arm_cfg.get("tcp", ""))
+        else:
+            print(f"[SYNC] No matching armature_set found for: {arm_name}")
+
+        return {'FINISHED'}
+    
 # ──────────────────────────────────────────────────────────────    
 classes = (
     OBJECT_OT_teach_pose,
