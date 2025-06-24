@@ -1,21 +1,28 @@
 import numpy as np
 from rteach.ext.ur_analytic_ik_ext import ur16e, ur5e
-from rteach.core.robot_state import get_active_robot
+from rteach.core.robot_presets import ROBOT_CONFIGS
 
-def _get_solver():
-    robot = get_active_robot().upper()
-    if "UR5" in robot:
+def _get_solver(robot_type: str, armature_name: str):
+    config = ROBOT_CONFIGS.get(robot_type.lower(), {})
+    map_dict = config.get("armature_solver_map", {})
+
+    solver_key = map_dict.get(armature_name)
+    if solver_key == "ur5e":
         return ur5e
-    elif "UR16" in robot:
+    elif solver_key == "ur16e":
         return ur16e
     else:
-        raise ValueError(f"[core_ur] Unknown UR variant: '{robot}'")
+        raise ValueError(f"[core_ur] Solver not defined for armature '{armature_name}' in robot_type '{robot_type}'")
 
 def inverse_kinematics(T: np.ndarray):
-    return _get_solver().inverse_kinematics(T)
+    from bpy import context
+    p = context.scene.ik_motion_props
+    return _get_solver(p.robot_type, p.armature).inverse_kinematics(T)
 
 def forward_kinematics(q: np.ndarray):
-    return _get_solver().forward_kinematics(*q)
+    from bpy import context
+    p = context.scene.ik_motion_props
+    return _get_solver(p.robot_type, p.armature).forward_kinematics(*q)
 
 def inverse_kinematics_fixed_q3(T: np.ndarray, q3: float):
-    return inverse_kinematics(T)  
+    return inverse_kinematics(T)
