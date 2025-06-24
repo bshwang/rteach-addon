@@ -503,6 +503,75 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
 
             f += 1
 
+        path_coll = bpy.data.collections.get("PathVisuals") or bpy.data.collections.new("PathVisuals")
+        if path_coll.name not in {c.name for c in ctx.scene.collection.children}:
+            ctx.scene.collection.children.link(path_coll)
+        for ob in list(path_coll.objects):
+            if ob.name.startswith("MotionPath"):
+                bpy.data.objects.remove(ob, do_unlink=True)
+
+        curve = bpy.data.curves.new("MotionPath_Curve", 'CURVE')
+        curve.dimensions = '3D'
+        curve.bevel_depth = 0.001
+        spline = curve.splines.new('POLY')
+
+        obj = p.tcp_object or p.ee_object or p.goal_object
+        if not obj:
+            self.report({'ERROR'}, "EE/TCP/Gizmo object not found")
+            return {'CANCELLED'}
+
+        import math
+        pts = []
+        for fr in range(p.bake_start_frame, f + 1):
+            ctx.scene.frame_set(fr)
+            bpy.context.view_layer.update()
+            bpy.context.evaluated_depsgraph_get().update()
+            pts.append(obj.matrix_world.translation.copy())
+
+        spline.points.add(len(pts) - 1)
+        for i, v in enumerate(pts):
+            spline.points[i].co = (*v, 1)
+
+        path_obj = bpy.data.objects.new("MotionPath", curve)
+        path_coll.objects.link(path_obj)
+
+        mat_path = bpy.data.materials.get("PathLinear")
+        if not mat_path:
+            mat_path = bpy.data.materials.new("PathLinear")
+            mat_path.use_nodes = False
+            mat_path.diffuse_color = (1, 1, 0, 0.8)
+            mat_path.blend_method = 'BLEND'
+        curve.materials.clear()
+        curve.materials.append(mat_path)
+
+        dist = [0.0]
+        for i in range(1, len(pts)):
+            dist.append(dist[-1] + (pts[i] - pts[i - 1]).length)
+        total_len = dist[-1] if dist[-1] > 0 else 1e-6
+
+        curve.bevel_factor_end = 0.0
+        curve.keyframe_insert("bevel_factor_end", frame=p.bake_start_frame)
+
+        for i, fr in enumerate(range(p.bake_start_frame + 1, f + 1), start=1):
+            progress = dist[i] / total_len
+            if not math.isclose(progress, dist[i - 1] / total_len, abs_tol=1e-6):
+                curve.bevel_factor_end = progress
+                curve.keyframe_insert("bevel_factor_end", frame=fr)
+
+        if curve.animation_data:
+            curve.animation_data.action.fcurves[0].extrapolation = 'CONSTANT'
+
+        # ▶ apply consistent path material
+        mat_path = bpy.data.materials.get("PathLinear")
+        if not mat_path:
+            mat_path = bpy.data.materials.new("PathLinear")
+            mat_path.use_nodes = False
+            mat_path.diffuse_color = (1, 1, 0, 0.8)
+            mat_path.blend_method = 'BLEND'
+
+        curve.materials.clear()
+        curve.materials.append(mat_path)
+
         self.report({'INFO'}, "Bake finished")
         return {'FINISHED'}
 
