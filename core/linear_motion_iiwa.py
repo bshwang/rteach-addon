@@ -1,17 +1,14 @@
-# rteach/linear_motion_iiwa.py(0604)
 """
 Precise Cartesian linear motion planner for KUKA iiwa
 · Lie-group (SE3) interpolation
 · Per-step IK with joint-limit / continuity check
 """
 import random
-import math
 import numpy as np
 from scipy.linalg import logm, expm, norm
-import rteach.ext.kuka_iiwa_ik  # .pyd
-import rteach.ext.kuka_iiwa_ik_generated as kk  # FK helper
+import rteach.ext.kuka_iiwa_ik  
+import rteach.ext.kuka_iiwa_ik_generated as kk  
 
-# ------------------------------------------------------------------
 def _interpolate_se3(T0, T1, t: float) -> np.ndarray:
     """Lie-group interpolation between two 4×4 SE3 matrices"""
     T_rel     = np.linalg.inv(T0) @ T1
@@ -31,7 +28,6 @@ def _feasible(q_prev, q, ll, ul, max_jump=0.5):
         return False
     return np.linalg.norm(q_prev - q) < max_jump
 
-# ------------------------------------------------------------------
 def plan_linear_path(
         q_init: np.ndarray,
         T_goal: np.ndarray,
@@ -97,8 +93,8 @@ def plan_linear_path(
                 break
 
         if ok:
-            print(f"✅ Solved at try {attempt+1}, path length = {len(path)}")
+            print(f"Solved at try {attempt+1}, path length = {len(path)}")
             return path
 
-    print("❌ Failed to solve Precise LIN path")
+    print("Failed to solve Precise LIN path")
     return None
