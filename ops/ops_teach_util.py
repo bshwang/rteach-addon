@@ -9,7 +9,6 @@ from pathlib import Path
 from mathutils import Vector
 from rteach.core.robot_presets import ROBOT_CONFIGS
 from rteach.core.core import get_forward_kinematics, get_BONES, get_AXES
-from rteach.core.core_workspace import create_workspace_cloud, remove_workspace_cloud
 
 def find_object_by_prefix(name: str) -> bpy.types.Object | None:
     """
@@ -64,8 +63,15 @@ class OBJECT_OT_draw_teach_path(bpy.types.Operator):
         pv = bpy.data.collections.get(col_name) or bpy.data.collections.new(col_name)
         if pv.name not in {c.name for c in ctx.scene.collection.children}:
             ctx.scene.collection.children.link(pv)
+
         for ob in list(pv.objects):
+            if ob.name.startswith("MotionPath"):
+                continue
             bpy.data.objects.remove(ob, do_unlink=True)
+
+        for ob in list(bpy.data.objects):
+            if ob.name == "TeachPath":
+                bpy.data.objects.remove(ob, do_unlink=True)
 
         curve = bpy.data.curves.new("TeachPath_Curve", 'CURVE')
         curve.dimensions = '3D'
