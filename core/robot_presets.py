@@ -1,7 +1,6 @@
-import math
-
 ROBOT_CONFIGS = {
-    "robot_prb": {
+    "prb_iiwa": {
+        "armature_type": "KUKA",
         "armature": "KUKA_iiwa14_Arm",
         "axes": ["y"] * 7,
         "joint_limits_deg": [
@@ -9,13 +8,13 @@ ROBOT_CONFIGS = {
             (-170, 170), (-120, 120), (-175, 175)
         ],
         "stage_joints": [
-            ("joint_ev_z", "EV_Z", "mm", -580, 220, "z", "location"),
-            ("joint_ev_y", "EV_Y", "mm", -400, 0, "y", "location"),
-            ("joint_stage_x", "Holder_X", "mm", 0, 400, "x", "location"),
-            ("joint_stage_y", "Holder_Y", "mm", -120, 280, "y", "location"),
-            ("joint_stage_z", "Holder_Z", "mm", -250, 550, "z", "location"),
-            ("joint_holder_tilt", "Holder_Tilt", "deg", 0, 35, "x", "rotation"),
+            ("joint_ev_z", "EV_Z", "mm", 250, 1050, "z", "location"),
+            ("joint_ev_y", "EV_Y", "mm", -200, 200, "y", "location"),
+            ("joint_stage_x", "Stage_X", "mm", 0, 400, "x", "location"),
+            ("joint_stage_y", "Stage_Y", "mm", -200, 200, "y", "location"),
+            ("joint_stage_z", "Stage_Z", "mm", 0, 800, "z", "location"),
             ("joint_holder_rot", "Holder_Rot", "deg", 0, 135, "z", "rotation"),
+            ("joint_holder_tilt", "Holder_Tilt", "deg", 0, 35, "x", "rotation"),
         ],
         "setup_objects": {
             "goal": "Target_Gizmo",
@@ -24,15 +23,20 @@ ROBOT_CONFIGS = {
             "ee": "KUKA_EE"
         }
     },
-    "robot_pmbot": {
+
+    "prb_ur": {
+        "armature_type": "UR",
         "armature": "UR16e_Arm",
         "axes": ["z", "x", "x", "z", "x", "z"],
         "joint_limits_deg": [[-360, 360]] * 6,
         "stage_joints": [
-            ("joint_z", "Elevation", "mm", 0, 1000, "z", "location"),
-            ("joint_rot", "Rotation", "deg", -180, 180, "z", "rotation"),
-            ("joint_x", "Linear", "mm", -500, 500, "x", "location"),
-            ("joint_torso", "Outtrigger", "deg", -90, 90, "z", "rotation")
+            ("joint_ev_z", "EV_Z", "mm", 250, 1050, "z", "location"),
+            ("joint_ev_y", "EV_Y", "mm", -200, 200, "y", "location"),
+            ("joint_stage_x", "Stage_X", "mm", 0, 400, "x", "location"),
+            ("joint_stage_y", "Stage_Y", "mm", -200, 200, "y", "location"),
+            ("joint_stage_z", "Stage_Z", "mm", 0, 800, "z", "location"),
+            ("joint_holder_rot", "Holder_Rot", "deg", 0, 135, "z", "rotation"),
+            ("joint_holder_tilt", "Holder_Tilt", "deg", 0, 35, "x", "rotation"),
         ],
         "setup_objects": {
             "goal": "Target_Gizmo",
@@ -41,7 +45,72 @@ ROBOT_CONFIGS = {
             "ee": "UR16e_EE"
         }
     },
+
+    "prb_beta": {
+        "armature_type": "KUKA",
+        "armature_sets": {
+            "KUKA_L_Arm": {
+                "base": "KUKA_L_Base",
+                "ee":   "KUKA_L_EE",
+                "tcp":  "KUKA_L_TCP"
+            },
+            "KUKA_R_Arm": {
+                "base": "KUKA_R_Base",
+                "ee":   "KUKA_R_EE",
+                "tcp":  "KUKA_R_TCP"
+            }
+        },
+        "axes": ["y"] * 7,
+        "joint_limits_deg": [
+            (-170, 170), (-120, 120), (-170, 170), (-120, 120),
+            (-170, 170), (-120, 120), (-175, 175)
+        ],
+        "stage_joints": [
+            ("joint_ev", "EV", "mm", -500, 200, "z", "location"),
+            ("joint_x", "Stage_X", "mm", 0, 450, "x", "location"),
+            ("joint_y", "Stage_Y", "mm", -250, 250, "y", "location"),
+            ("joint_z", "Stage_Z", "mm", -250, 450, "z", "location"),
+            ("joint_rot", "Holder_Rot", "deg", 0, 135, "z", "rotation"),
+            ("joint_tilt", "Holder_Tilt", "deg", 0, 35, "x", "rotation"),
+        ],
+        "setup_objects": {
+            "goal": "Target_Gizmo"
+        }
+    },
+
+    "pmbot_beta": {
+        "armature_type": "UR",
+        "armature_solver_map": {
+            "UR5e_Arm": "ur5e",
+            "UR16e_Arm": "ur16e"
+        },
+        "armature_sets": {
+            "UR5e_Arm": {
+                "base": "UR5e_Base",
+                "ee":   "UR5e_EE",
+                "tcp":  "UR5e_TCP"
+            },
+            "UR16e_Arm": {
+                "base": "UR16e_Base",
+                "ee":   "UR16e_EE",
+                "tcp":  "UR16e_TCP"
+            }
+        },
+        "axes": ["z", "x", "x", "z", "x", "z"],
+        "joint_limits_deg": [[-360, 360]] * 6,
+        "stage_joints": [
+            ("joint_elevation", "Elevation", "mm", 0, 250, "z", "location"),
+            ("joint_rotation", "Rotation", "deg", -180, 180, "z", "rotation"),
+            ("joint_linear", "Linear", "mm", -170, 170, "x", "location"),
+            ("joint_ots", "Outtrigger", "mm", -40, 0, "z", "location")
+        ],
+        "setup_objects": {
+            "goal": "Target_Gizmo",
+        }
+    },
+
     "ur16e": {
+        "armature_type": "UR",
         "armature": "UR16e_Arm",
         "axes": ["z", "x", "x", "z", "x", "z"],
         "joint_limits_deg": [[-360, 360]] * 6,
@@ -53,7 +122,9 @@ ROBOT_CONFIGS = {
             "ee": "UR16e_EE"
         }
     },
+
     "ur5e": {
+        "armature_type": "UR",
         "armature": "UR5e_Arm",
         "axes": ["z", "x", "x", "z", "x", "z"],
         "joint_limits_deg": [[-360, 360]] * 6,
@@ -65,7 +136,9 @@ ROBOT_CONFIGS = {
             "ee": "UR5e_EE"
         }
     },
+
     "iiwa14": {
+        "armature_type": "KUKA",
         "armature": "KUKA_iiwa14_Arm",
         "axes": ["y"] * 7,
         "joint_limits_deg": [
@@ -81,6 +154,7 @@ ROBOT_CONFIGS = {
         }
     }
 }
+
 
 def get_joint_limits_deg(robot_type):
     return ROBOT_CONFIGS[robot_type.lower()]["joint_limits_deg"]
