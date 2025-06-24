@@ -382,8 +382,9 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
         tps_all = sorted(coll.objects, key=lambda o: o.get("index", 9999))
 
         if p.bake_all_tcp:
-            start_idx = 0
-            end_idx   = len(tps_all) - 1
+            all_indices = [tp.get("index", 9999) for tp in tps_all]
+            start_idx = min(all_indices)
+            end_idx = max(all_indices)
         else:
             start_idx = p.bake_start_idx
             end_idx   = p.bake_end_idx
