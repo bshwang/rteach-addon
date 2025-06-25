@@ -28,7 +28,6 @@ def get_robot_preview(robot_key):
     if robot_key not in pcoll:
         try:
             pcoll.load(robot_key, thumb_abs_path, 'IMAGE')
-            print(f"[OK] Loaded thumbnail for {robot_key}")
         except Exception as e:
             print(f"[FAIL] Failed to load thumbnail for {robot_key}: {e}")
             return None
@@ -219,8 +218,6 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         icon = 'CHECKBOX_HLT' if p.show_workspace else 'CHECKBOX_DEHLT'
         row = box.row()
         row.prop(p, "show_workspace", text="Show Workspace", toggle=True, icon=icon)
-
-
 
     def draw_step1(self, L, ctx):
 
