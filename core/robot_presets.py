@@ -2,6 +2,9 @@ ROBOT_CONFIGS = {
     "prb_iiwa": {
         "armature_type": "KUKA",
         "armature": "KUKA_iiwa14_Arm",
+        "armature_solver_map": {   
+            "KUKA_iiwa14_Arm": "iiwa14"
+        },
         "axes": ["y"] * 7,
         "joint_limits_deg": [
             (-170, 170), (-120, 120), (-170, 170), (-120, 120),
@@ -19,8 +22,8 @@ ROBOT_CONFIGS = {
         "setup_objects": {
             "goal": "Target_Gizmo",
             "base": "KUKA_Base",
-            "tcp": "KUKA_TCP",
-            "ee": "KUKA_EE"
+            "ee": "KUKA_EE",
+            "tcp": "KUKA_TCP"
         },
         "thumbnail": "resources/robot_thumbs/prb_iiwa.png"
     },
@@ -28,6 +31,9 @@ ROBOT_CONFIGS = {
     "prb_ur": {
         "armature_type": "UR",
         "armature": "UR16e_Arm",
+        "armature_solver_map": {   
+            "UR16e_Arm": "ur16e"
+        },
         "axes": ["z", "x", "x", "z", "x", "z"],
         "joint_limits_deg": [[-360, 360]] * 6,
         "stage_joints": [
@@ -42,14 +48,18 @@ ROBOT_CONFIGS = {
         "setup_objects": {
             "goal": "Target_Gizmo",
             "base": "UR16e_Base",
-            "tcp": "UR16e_TCP",
-            "ee": "UR16e_EE"
+            "ee": "UR16e_EE",
+            "tcp": "UR16e_TCP"
         },
         "thumbnail": "resources/robot_thumbs/prb_ur.png"
     },
 
     "prb_beta": {
         "armature_type": "KUKA",
+        "armature_solver_map": {
+            "KUKA_L_Arm": "iiwa14",
+            "KUKA_R_Arm": "iiwa14"
+        },
         "armature_sets": {
             "KUKA_L_Arm": {
                 "base": "KUKA_L_Base",
@@ -76,7 +86,10 @@ ROBOT_CONFIGS = {
             ("joint_tilt", "Holder_Tilt", "deg", 0, 35, "x", "rotation"),
         ],
         "setup_objects": {
-            "goal": "Target_Gizmo"
+            "goal": "Target_Gizmo",
+            "base": "KUKA_L_Base",  
+            "tcp":  "KUKA_L_TCP",
+            "ee":   "KUKA_L_EE"
         },
         "thumbnail": "resources/robot_thumbs/prb_beta.png"
     },
@@ -116,7 +129,7 @@ ROBOT_CONFIGS = {
     "ur16e": {
         "armature_type": "UR",
         "armature": "UR16e_Arm",
-         "armature_solver_map": {         
+        "armature_solver_map": {         
             "UR16e_Arm": "ur16e"
         },
         "axes": ["z", "x", "x", "z", "x", "z"],
@@ -152,6 +165,9 @@ ROBOT_CONFIGS = {
     "iiwa14": {
         "armature_type": "KUKA",
         "armature": "KUKA_iiwa14_Arm",
+        "armature_solver_map": {         
+            "KUKA_iiwa14_Arm": "iiwa14"
+        },
         "axes": ["y"] * 7,
         "joint_limits_deg": [
             (-170, 170), (-120, 120), (-170, 170), (-120, 120),
