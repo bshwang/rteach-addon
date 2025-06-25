@@ -9,6 +9,7 @@ from pathlib import Path
 from mathutils import Vector
 from rteach.core.robot_presets import ROBOT_CONFIGS
 from rteach.core.core import get_forward_kinematics, get_BONES, get_AXES
+from rteach.config.settings import delayed_workspace_update
 
 def find_object_by_prefix(name: str) -> bpy.types.Object | None:
     """
@@ -598,7 +599,6 @@ class OBJECT_OT_cycle_armature_set(bpy.types.Operator):
 
     def execute(self, ctx):
         p = ctx.scene.ik_motion_props
-        from rteach.core.robot_presets import ROBOT_CONFIGS
         config = ROBOT_CONFIGS.get(p.robot_type.lower(), {})
         sets = config.get("armature_sets", {})
 
@@ -622,6 +622,8 @@ class OBJECT_OT_cycle_armature_set(bpy.types.Operator):
         p.tcp_object = find_object_by_prefix(cfg.get("tcp", ""))
 
         self.report({'INFO'}, f"Switched to: {next_key}")
+
+        bpy.app.timers.register(delayed_workspace_update, first_interval=0.05)
         return {'FINISHED'}
 
 # ──────────────────────────────────────────────────────────────   
