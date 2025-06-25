@@ -95,34 +95,52 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         if not p.show_robot_library:
             return
 
-        robot_keys = list(ROBOT_CONFIGS.keys())
-        cols = 2
-        rows = (len(robot_keys) + cols - 1) // cols
+        single_keys = []
+        custom_keys = []
+        for key, cfg in ROBOT_CONFIGS.items():
+            stage = cfg.get("stage_joints", [])
+            if stage:
+                custom_keys.append(key)
+            else:
+                single_keys.append(key)
 
-        for r in range(rows):
-            row = box.row(align=True)
-            for c in range(cols):
-                i = r * cols + c
-                col = row.column(align=True)
+        def draw_robot_slide_section(layout, title, keys, slide_prop_name):
+            if not keys:
+                return
 
-                if i >= len(robot_keys):
-                    col.label(text="")
-                    continue
+            scene = bpy.context.scene
+            idx = getattr(scene, slide_prop_name, 0) % len(keys)
+            key = keys[idx]
+            robot_cfg = ROBOT_CONFIGS[key]
+            thumb = get_robot_preview(key)
 
-                key = robot_keys[i]
-                robot_cfg = ROBOT_CONFIGS[key]
-                thumb = get_robot_preview(key)
+            layout.label(text=title, icon='ARMATURE_DATA')
 
-                colbox = col.box()
+            row = layout.row(align=True)
 
-                if thumb:
-                    colbox.template_icon(icon_value=thumb.icon_id, scale=6.0)
-                else:
-                    colbox.label(text="(No image)")
+            col_prev = row.column(align=True)
+            col_prev.scale_y = 6
+            op_prev = col_prev.operator("object.slide_robot_prev", text="", icon='TRIA_LEFT')
+            op_prev.group = slide_prop_name
 
-                label = robot_cfg.get("armature", key)
-                op = colbox.operator("object.import_robot_from_grid", text=label, icon='IMPORT')
-                op.robot_key = key
+            col = row.column(align=True)
+            box = col.box()
+            if thumb:
+                box.template_icon(icon_value=thumb.icon_id, scale=6.0)
+            else:
+                box.label(text="(No image)")
+
+            col.label(text=key)
+            op = col.operator("object.import_robot_from_grid", text="Import", icon='IMPORT')
+            op.robot_key = key
+
+            col_next = row.column(align=True)
+            col_next.scale_y = 6
+            op_next = col_next.operator("object.slide_robot_next", text="", icon='TRIA_RIGHT')
+            op_next.group = slide_prop_name
+
+        draw_robot_slide_section(box, "Single Robots", sorted(single_keys), "robot_slide_single_idx")
+        draw_robot_slide_section(box, "Custom Systems", sorted(custom_keys), "robot_slide_custom_idx")
 
     def draw_setup_section(self, L, ctx):
         p = ctx.scene.ik_motion_props
