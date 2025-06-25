@@ -1266,9 +1266,36 @@ class OBJECT_OT_sync_robot_type(bpy.types.Operator):
         else:
             print(f"[SYNC] No matching armature_set found for: {arm_name}")
 
+        def trigger_workspace_visibility_refresh():
+            p = bpy.context.scene.ik_motion_props
+            if not p.armature or not p.robot_type:
+                return 0.1  
+
+            if p.show_workspace:
+                p.show_workspace = False
+                p.show_workspace = True
+            else:
+                pass
+
+            return None 
+
+        bpy.app.timers.register(trigger_workspace_visibility_refresh, first_interval=0.1)
+
         return {'FINISHED'}
     
 # ──────────────────────────────────────────────────────────────
+def set_workspace_visibility():
+    p = bpy.context.scene.ik_motion_props
+    robot_key = p.robot_type.lower()
+
+    for ob in bpy.data.objects:
+        if ob.name.startswith("Workspace_"):
+            is_current = ob.name == f"Workspace_{robot_key}"
+            visible = p.show_workspace and is_current
+            ob.hide_viewport = not visible
+            ob.hide_render = not visible
+            ob.hide_set(not visible)
+
 class OBJECT_OT_toggle_workspace_visibility(bpy.types.Operator):
     bl_idname = "object.toggle_workspace_visibility"
     bl_label = "Toggle Workspace Visibility"
@@ -1276,18 +1303,25 @@ class OBJECT_OT_toggle_workspace_visibility(bpy.types.Operator):
     def execute(self, ctx):
         p = ctx.scene.ik_motion_props
         robot_key = p.robot_type.lower()
-        obj_name = f"Workspace_{robot_key}"
+        config = ROBOT_CONFIGS.get(robot_key, {})
 
-        obj = bpy.data.objects.get(obj_name)
-        if not obj:
-            self.report({'WARNING'}, f"Workspace object '{obj_name}' not found")
-            return {'CANCELLED'}
+        arm_solver_map = config.get("armature_solver_map", {})
+        active_solver_key = arm_solver_map.get(p.armature, robot_key)
 
-        obj.hide_viewport = not p.show_workspace
-        obj.hide_render = not p.show_workspace
-        obj.hide_set(not p.show_workspace)
+        workspace_name_expected = f"Workspace_{active_solver_key}"
+        tokens = p.armature.split("_")
+        suffix = tokens[1] if len(tokens) >= 2 else ""
+        if suffix.upper() in {"L", "R"}:
+            workspace_name_expected += f"_{suffix.lower()}"
 
-        self.report({'INFO'}, f"{'Shown' if p.show_workspace else 'Hidden'}: {obj_name}")
+        for ob in bpy.data.objects:
+            if ob.name.startswith("Workspace_"):
+                is_current = ob.name.lower() == workspace_name_expected.lower()
+                visible = p.show_workspace and is_current
+                ob.hide_viewport = not visible
+                ob.hide_render = not visible
+                ob.hide_set(not visible)
+
         return {'FINISHED'}
 
 # ──────────────────────────────────────────────────────────────    
