@@ -2,8 +2,6 @@ import os
 import bpy
 import json
 import math
-
-from bpy import context
     
 class TcpItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="TCP Name")
@@ -23,6 +21,10 @@ def in_empty_setup():
             for c in ["Setup"]
         )
     return _poll
+
+def delayed_workspace_update():
+    result = bpy.ops.object.toggle_workspace_visibility()
+    return None
 
 class IKMotionProperties(bpy.types.PropertyGroup):
     tcp_sorted_list: bpy.props.CollectionProperty(type=TcpItem)
@@ -235,7 +237,7 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         name="Show Workspace",
         default=False,
         description="Toggle workspace mesh visibility",
-        update=lambda self, ctx: bpy.ops.object.toggle_workspace_visibility()
+        update=lambda self, ctx: bpy.app.timers.register(delayed_workspace_update, first_interval=0.01)
     )
 
     bake_start_frame: bpy.props.IntProperty(
