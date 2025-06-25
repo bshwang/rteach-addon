@@ -1,4 +1,4 @@
-import bpy 
+import bpy
 import os
 from bpy.props import EnumProperty
 from rteach.core.robot_presets import ROBOT_CONFIGS
@@ -71,6 +71,23 @@ class OBJECT_OT_import_robot_system(bpy.types.Operator):
             return None  
 
         bpy.app.timers.register(delayed_sync, first_interval=0.5)
+
+        config = ROBOT_CONFIGS.get(self.system.lower(), {})
+        solver_keys = set()
+
+        if "armature_solver_map" in config:
+            solver_keys.update(config["armature_solver_map"].values())
+        else:
+            solver_keys.add(self.system.lower())
+
+        for ob in bpy.data.objects:
+            name = ob.name.lower()
+            if name.startswith("workspace_"):
+                if any(sk in name for sk in solver_keys):
+                    ob.hide_viewport = True
+                    ob.hide_render = True
+                    ob.hide_set(True)
+                    print(f"[INFO] Workspace hidden: {ob.name}")
 
         return {'FINISHED'}
 
