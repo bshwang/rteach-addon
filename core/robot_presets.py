@@ -126,22 +126,22 @@ ROBOT_CONFIGS = {
         "thumbnail": "resources/robot_thumbs/pmbot_beta.png"
     },
 
-    "ur16e": {
+    "ur3e": {
         "armature_type": "UR",
-        "armature": "UR16e_Arm",
+        "armature": "UR3e_Arm",
         "armature_solver_map": {         
-            "UR16e_Arm": "ur16e"
+            "UR3e_Arm": "ur3e"
         },
         "axes": ["z", "x", "x", "z", "x", "z"],
         "joint_limits_deg": [[-360, 360]] * 6,
         "stage_joints": [],
         "setup_objects": {
             "goal": "Target_Gizmo",
-            "base": "UR16e_Base",
-            "tcp": "UR16e_TCP",
-            "ee": "UR16e_EE"
+            "base": "UR3e_Base",
+            "tcp": "UR3e_TCP",
+            "ee": "UR3e_EE"
         },
-        "thumbnail": "resources/robot_thumbs/ur16e.png"
+        "thumbnail": "resources/robot_thumbs/ur3e.png"
     },
 
     "ur5e": {
@@ -160,6 +160,96 @@ ROBOT_CONFIGS = {
             "ee": "UR5e_EE"
         },
         "thumbnail": "resources/robot_thumbs/ur5e.png"
+    },
+
+    "ur10e": {
+        "armature_type": "UR",
+        "armature": "UR10e_Arm",
+        "armature_solver_map": {         
+            "UR10e_Arm": "ur10e"
+        },
+        "axes": ["z", "x", "x", "z", "x", "z"],
+        "joint_limits_deg": [[-360, 360]] * 6,
+        "stage_joints": [],
+        "setup_objects": {
+            "goal": "Target_Gizmo",
+            "base": "UR10e_Base",
+            "tcp": "UR10e_TCP",
+            "ee": "UR10e_EE"
+        },
+        "thumbnail": "resources/robot_thumbs/ur10e.png"
+    },
+ 
+    "ur16e": {
+        "armature_type": "UR",
+        "armature": "UR16e_Arm",
+        "armature_solver_map": {         
+            "UR16e_Arm": "ur16e"
+        },
+        "axes": ["z", "x", "x", "z", "x", "z"],
+        "joint_limits_deg": [[-360, 360]] * 6,
+        "stage_joints": [],
+        "setup_objects": {
+            "goal": "Target_Gizmo",
+            "base": "UR16e_Base",
+            "tcp": "UR16e_TCP",
+            "ee": "UR16e_EE"
+        },
+        "thumbnail": "resources/robot_thumbs/ur16e.png"
+    },
+
+    "ur15": {
+        "armature_type": "UR",
+        "armature": "UR15_Arm",
+        "armature_solver_map": {         
+            "UR15_Arm": "ur15"
+        },
+        "axes": ["z", "x", "x", "z", "x", "z"],
+        "joint_limits_deg": [[-360, 360]] * 6,
+        "stage_joints": [],
+        "setup_objects": {
+            "goal": "Target_Gizmo",
+            "base": "UR15_Base",
+            "tcp": "UR15_TCP",
+            "ee": "UR15_EE"
+        },
+        "thumbnail": "resources/robot_thumbs/ur15.png"
+    },
+
+    "ur20": {
+        "armature_type": "UR",
+        "armature": "UR20_Arm",
+        "armature_solver_map": {         
+            "UR20_Arm": "ur20"
+        },
+        "axes": ["z", "x", "x", "z", "x", "z"],
+        "joint_limits_deg": [[-360, 360]] * 6,
+        "stage_joints": [],
+        "setup_objects": {
+            "goal": "Target_Gizmo",
+            "base": "UR20_Base",
+            "tcp": "UR20_TCP",
+            "ee": "UR20_EE"
+        },
+        "thumbnail": "resources/robot_thumbs/ur20.png"
+    },
+
+    "ur30": {
+        "armature_type": "UR",
+        "armature": "UR30_Arm",
+        "armature_solver_map": {         
+            "UR30_Arm": "ur30"
+        },
+        "axes": ["z", "x", "x", "z", "x", "z"],
+        "joint_limits_deg": [[-360, 360]] * 6,
+        "stage_joints": [],
+        "setup_objects": {
+            "goal": "Target_Gizmo",
+            "base": "UR30_Base",
+            "tcp": "UR30_TCP",
+            "ee": "UR30_EE"
+        },
+        "thumbnail": "resources/robot_thumbs/ur30.png"
     },
 
     "iiwa14": {
