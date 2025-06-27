@@ -1,5 +1,5 @@
 import numpy as np
-from rteach.ext.ur_analytic_ik_ext import ur16e, ur5e
+from rteach.ext.ur_analytic_ik_ext import ur16e, ur5e, ur3e, ur10e, ur15, ur20, ur30
 from rteach.core.robot_presets import ROBOT_CONFIGS
 
 def _get_solver(robot_type: str, armature_name: str):
@@ -7,10 +7,20 @@ def _get_solver(robot_type: str, armature_name: str):
     map_dict = config.get("armature_solver_map", {})
 
     solver_key = map_dict.get(armature_name)
-    if solver_key == "ur5e":
+    if solver_key == "ur3e":
+        return ur3e
+    elif solver_key == "ur5e":
         return ur5e
+    elif solver_key == "ur10e":
+        return ur10e
+    elif solver_key == "ur15":
+        return ur15
     elif solver_key == "ur16e":
         return ur16e
+    elif solver_key == "ur20":
+        return ur20
+    elif solver_key == "ur30":
+        return ur30
     else:
         raise ValueError(f"[core_ur] Solver not defined for armature '{armature_name}' in robot_type '{robot_type}'")
 
