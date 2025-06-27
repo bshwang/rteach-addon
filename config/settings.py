@@ -287,6 +287,7 @@ class IKMotionProperties(bpy.types.PropertyGroup):
     show_step1: bpy.props.BoolProperty(name="Show Step 1", default=True)
     show_step2: bpy.props.BoolProperty(name="Show Step 2", default=True)
     show_step3: bpy.props.BoolProperty(name="Show Step 3", default=True)
+    show_pick_place: bpy.props.BoolProperty(name="Show Pick/Place", default=True)
 
     target_rel_x: bpy.props.FloatProperty(name="X (mm)", default=0.0)
     target_rel_y: bpy.props.FloatProperty(name="Y (mm)", default=0.0)
