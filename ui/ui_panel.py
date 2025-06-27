@@ -57,6 +57,40 @@ class UI_UL_tcp_list(bpy.types.UIList):
             op = layout.operator("object.tcp_list_select", text=label, emboss=False, icon='EMPTY_AXIS')
             op.index = index
 
+def draw_robot_slide_section(layout, keys, slide_prop_name):
+    if not keys:
+        return
+
+    scene = bpy.context.scene
+    idx = getattr(scene, slide_prop_name, 0) % len(keys)
+    key = keys[idx]
+    cfg = ROBOT_CONFIGS[key]
+    thumb = get_robot_preview(key)
+
+    label_text = cfg.get("display_name", key)
+
+    row = layout.row(align=True)
+
+    col_prev = row.column(align=True)
+    col_prev.scale_y = 7
+    op_prev = col_prev.operator("object.slide_robot_prev", text="", icon='TRIA_LEFT')
+    op_prev.group = slide_prop_name
+
+    col = row.column(align=True)
+    box = col.box()
+    if thumb:
+        box.template_icon(icon_value=thumb.icon_id, scale=5.55)
+    else:
+        box.label(text="(No image)")
+
+    op = col.operator("object.import_robot_from_grid", text=label_text, icon='IMPORT')
+    op.robot_key = key
+
+    col_next = row.column(align=True)
+    col_next.scale_y = 7
+    op_next = col_next.operator("object.slide_robot_next", text="", icon='TRIA_RIGHT')
+    op_next.group = slide_prop_name
+
 class VIEW3D_PT_ur_ik(bpy.types.Panel):
     bl_label = "Robot Motion Simulator"
     bl_idname = "VIEW3D_PT_ur_ik"
@@ -71,6 +105,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         self.draw_robot_selector(L, ctx)
         self.draw_setup_section(L, ctx)
         self.draw_target_section(L, ctx)
+        self.draw_pick_place_section(L, ctx)
         self.draw_jog_section(L, ctx)
         self.draw_stage_jog_section(L, ctx)
         self.draw_step1(L, ctx)
@@ -91,6 +126,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row.label(text=p.robot_type)
         row.operator("object.clear_robot_system", text="Clear", icon='TRASH')
         row.operator("object.sync_robot_type", text="Sync", icon='FILE_REFRESH')
+        box.separator(factor=1.5)
 
         if not p.show_robot_library:
             return
@@ -104,43 +140,13 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             else:
                 single_keys.append(key)
 
-        def draw_robot_slide_section(layout, title, keys, slide_prop_name):
-            if not keys:
-                return
+        box.label(text="Single Robots")
+        draw_robot_slide_section(box, single_keys, "robot_slide_single_idx")
 
-            scene = bpy.context.scene
-            idx = getattr(scene, slide_prop_name, 0) % len(keys)
-            key = keys[idx]
-            robot_cfg = ROBOT_CONFIGS[key]
-            thumb = get_robot_preview(key)
+        box.separator(factor=1.5)
 
-            layout.label(text=title, icon='ARMATURE_DATA')
-
-            row = layout.row(align=True)
-
-            col_prev = row.column(align=True)
-            col_prev.scale_y = 6
-            op_prev = col_prev.operator("object.slide_robot_prev", text="", icon='TRIA_LEFT')
-            op_prev.group = slide_prop_name
-
-            col = row.column(align=True)
-            box = col.box()
-            if thumb:
-                box.template_icon(icon_value=thumb.icon_id, scale=6.0)
-            else:
-                box.label(text="(No image)")
-
-            col.label(text=key)
-            op = col.operator("object.import_robot_from_grid", text="Import", icon='IMPORT')
-            op.robot_key = key
-
-            col_next = row.column(align=True)
-            col_next.scale_y = 6
-            op_next = col_next.operator("object.slide_robot_next", text="", icon='TRIA_RIGHT')
-            op_next.group = slide_prop_name
-
-        draw_robot_slide_section(box, "Single Robots", sorted(single_keys), "robot_slide_single_idx")
-        draw_robot_slide_section(box, "Custom Systems", sorted(custom_keys), "robot_slide_custom_idx")
+        box.label(text="Custom Systems")
+        draw_robot_slide_section(box, custom_keys, "robot_slide_custom_idx")
 
     def draw_setup_section(self, L, ctx):
         p = ctx.scene.ik_motion_props
@@ -187,7 +193,21 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row = box.row(align=True)
             row.operator("object.snap_target_to_fk", text="Snap to FK", icon='CONSTRAINT')
             row.operator("object.setup_tcp_from_gizmo", text="Set as TCP", icon='EMPTY_ARROWS')
-            
+
+    def draw_pick_place_section(self, L, ctx):
+        p = ctx.scene.ik_motion_props
+        box = L.box()
+        row = box.row()
+        icon = 'TRIA_DOWN' if p.show_pick_place else 'TRIA_RIGHT'
+        row.prop(p, "show_pick_place", icon=icon, text="Pick / Place", emboss=False)
+
+        if not p.show_pick_place:
+            return
+
+        row = box.row(align=True)
+        row.operator("object.pick_object", text="Pick", icon='LINKED')
+        row.operator("object.place_object", text="Place", icon='UNLINKED')
+
     def draw_jog_section(self, L, ctx):
 
         p = ctx.scene.ik_motion_props
@@ -357,6 +377,11 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row = box.row(align=True)
         row.operator("object.bake_teach_sequence", text="Bake", icon='FILE_TICK')
         row.operator("object.clear_bake_keys", text="", icon='TRASH')
+        
+        row = box.row(align=True)
+        row.scale_x = 1.1
+        row.label(text="High Precision Linear Mode")
+        row.prop(p, "precise_linear", text="", icon='CONSTRAINT', toggle=True)
 
     def draw_stage_jog_section(self, layout, ctx):
         prefs = get_addon_prefs()
