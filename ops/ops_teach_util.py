@@ -10,6 +10,8 @@ from mathutils import Vector
 from rteach.core.robot_presets import ROBOT_CONFIGS
 from rteach.core.core import get_forward_kinematics, get_BONES, get_AXES
 from rteach.config.settings import delayed_workspace_update
+from rteach.ext import dynamic_parent as dp
+from rteach.core.core import get_tcp_object
 
 def find_object_by_prefix(name: str) -> bpy.types.Object | None:
     """
@@ -515,7 +517,12 @@ class OBJECT_OT_clear_robot_system(bpy.types.Operator):
                 except:
                     pass
 
-        for name in ["Target_Gizmo", "KUKA_Base", "UR5e_TCP", "UR16e_EE"]:
+        robot_key = p.robot_type.lower()
+        config = ROBOT_CONFIGS.get(robot_key, {})
+        delete_names = {"Target_Gizmo"}
+        delete_names.update(config.get("setup_objects", {}).values())
+
+        for name in delete_names:
             obj = bpy.data.objects.get(name)
             if obj:
                 bpy.data.objects.remove(obj, do_unlink=True)
@@ -527,7 +534,7 @@ class OBJECT_OT_clear_robot_system(bpy.types.Operator):
         p.ee_object = None
         p.tcp_object = None
         p.robot_type = ""
-        p.armature = 'None' 
+        p.armature = 'None'
 
         self.report({'INFO'}, "Cleared robot system and purged unused data")
         return {'FINISHED'}
@@ -625,6 +632,83 @@ class OBJECT_OT_cycle_armature_set(bpy.types.Operator):
 
         bpy.app.timers.register(delayed_workspace_update, first_interval=0.05)
         return {'FINISHED'}
+    
+# ──────────────────────────────────────────────────────────────  
+class OBJECT_OT_slide_robot_prev(bpy.types.Operator):
+    bl_idname = "object.slide_robot_prev"
+    bl_label = "Prev Robot"
+    group: bpy.props.StringProperty()
+
+    def execute(self, ctx):
+        idx = getattr(ctx.scene, self.group, 0)
+        setattr(ctx.scene, self.group, (idx - 1) % 99)
+        return {'FINISHED'}
+    
+# ──────────────────────────────────────────────────────────────  
+class OBJECT_OT_slide_robot_next(bpy.types.Operator):
+    bl_idname = "object.slide_robot_next"
+    bl_label = "Next Robot"
+    group: bpy.props.StringProperty()
+
+    def execute(self, ctx):
+        idx = getattr(ctx.scene, self.group, 0)
+        setattr(ctx.scene, self.group, (idx + 1) % 99)
+        return {'FINISHED'}
+    
+class OBJECT_OT_pick_object(bpy.types.Operator):
+    bl_idname = "object.pick_object"
+    bl_label = "Pick Object"
+
+    def execute(self, ctx):
+        tcp = get_tcp_object()
+        if not tcp:
+            self.report({'ERROR'}, "TCP not found")
+            return {'CANCELLED'}
+        sel = ctx.selected_objects
+        if not sel:
+            self.report({'ERROR'}, "No object selected")
+            return {'CANCELLED'}
+        child = ctx.active_object
+        if child == tcp:
+            self.report({'ERROR'}, "Select target object, not TCP")
+            return {'CANCELLED'}
+
+        prev_active = ctx.view_layer.objects.active
+        prev_sel = [o for o in sel]
+
+        for o in ctx.selected_objects:
+            o.select_set(False)
+        tcp.select_set(True)
+        child.select_set(True)
+        ctx.view_layer.objects.active = child
+
+        dp.dp_create_dynamic_parent_obj(self)
+
+        if prev_active:
+            ctx.view_layer.objects.active = prev_active
+        for o in ctx.selected_objects:
+            o.select_set(False)
+        for o in prev_sel:
+            o.select_set(True)
+
+        return {'FINISHED'}
+    
+# ──────────────────────────────────────────────────────────────  
+class OBJECT_OT_place_object(bpy.types.Operator):
+    bl_idname = "object.place_object"
+    bl_label = "Place Object"
+
+    def execute(self, ctx):
+        obj = ctx.active_object
+        if not obj:
+            self.report({'ERROR'}, "No active object")
+            return {'CANCELLED'}
+        const = dp.get_last_dynamic_parent_constraint(obj)
+        if not const:
+            self.report({'WARNING'}, "No dynamic parent constraint")
+            return {'CANCELLED'}
+        dp.disable_constraint(obj, const, ctx.scene.frame_current)
+        return {'FINISHED'}
 
 # ──────────────────────────────────────────────────────────────   
 classes = (
@@ -644,4 +728,8 @@ classes = (
     OBJECT_OT_refresh_tcp_list,
     OBJECT_OT_toggle_path_visibility,
     OBJECT_OT_cycle_armature_set,
+    OBJECT_OT_slide_robot_prev, 
+    OBJECT_OT_slide_robot_next,
+    OBJECT_OT_pick_object,
+    OBJECT_OT_place_object,
 )
