@@ -256,3 +256,7 @@ def get_best_ik_solution(p, T_goal, q_ref=None):
         best = 0
 
     return sols[best], sols
+
+def get_tcp_object():
+    p = bpy.context.scene.ik_motion_props
+    return p.tcp_object if p and p.tcp_object else None
