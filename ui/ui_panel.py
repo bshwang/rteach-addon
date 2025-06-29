@@ -335,16 +335,27 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row.operator("object.record_goal_pose",  text="Record",  icon='REC')
         row.operator("object.update_tcp_pose", text="Update", icon='EXPORT')
 
-        next_idx = obj.get("index", 0) + 1
-        tps = [o for o in bpy.data.collections.get("Teach data").objects if o.name.startswith("P.")]
-        tps = sorted(tps, key=lambda o: o.get("index", 9999))
-        next_point = next((tp for tp in tps if tp.get("index") == next_idx), None)
-
-        if next_point:
-            row = box.row(align=True)
-            row.label(text=f"Path {obj.name} → {next_point.name}")
-            row.prop(p, "path_percent", text="", slider=True)
-            row.operator("object.snap_gizmo_on_path", text="", icon='RESTRICT_SELECT_OFF')
+        if obj:
+            next_idx = obj.get("index", 0) + 1
+            coll = bpy.data.collections.get("Teach data")
+            if coll:
+                tps = sorted(
+                    (o for o in coll.objects if o.name.startswith("P.")),
+                    key=lambda o: o.get("index", 9999)
+                )
+                next_point = next(
+                    (tp for tp in tps if tp.get("index") == next_idx),
+                    None
+                )
+                if next_point:
+                    row = box.row(align=True)
+                    row.label(text=f"Path {obj.name} → {next_point.name}")
+                    row.prop(p, "path_percent", text="", slider=True)
+                    row.operator(
+                        "object.snap_gizmo_on_path",
+                        text="",
+                        icon='RESTRICT_SELECT_OFF'
+                    )
 
         box.separator()
         box.label(text="🔸 Bake Motion")
