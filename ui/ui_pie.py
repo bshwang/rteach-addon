@@ -12,12 +12,10 @@ class VIEW3D_MT_robot_step1_pie(bpy.types.Menu):
 
     def draw(self, context):
         pie = self.layout.menu_pie()
-        pie.operator("object.teach_pose", text="Go To Pose", icon='VIEW_CAMERA')
-        pie.operator("object.apply_preview_pose", text="Apply Pose", icon='KEY_HLT')
-        pie.operator("object.cycle_pose_preview", text="Next Pose").direction = 'NEXT'
-        pie.operator("object.cycle_pose_preview", text="Prev Pose").direction = 'PREV'
-        pie.prop(context.scene.ik_motion_props, "auto_record", text="Record", toggle=True, icon='REC')
-
+        pie.operator("object.teach_pose", text="Preview", icon='HIDE_OFF')
+        pie.operator("object.record_tcp_from_ik", text="Record", icon='EMPTY_AXIS')
+        pie.operator("object.cycle_pose_preview", text="Next").direction = 'NEXT'
+        pie.operator("object.cycle_pose_preview", text="Prev").direction = 'PREV'
 
 # ──────────────────────────────────────────────────────────────
 # Shift+Q — TCP List Menu 
