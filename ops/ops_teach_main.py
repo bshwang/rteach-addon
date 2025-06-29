@@ -1,9 +1,8 @@
 import bpy 
 import math
-
 import numpy as np, math
 
-from mathutils import Matrix, Euler
+from mathutils import Matrix
 from scipy.spatial.transform import Rotation as R, Slerp
 from rteach.core.robot_state import get_armature_type
 from rteach.core.core import (
@@ -12,9 +11,7 @@ from rteach.core.core import (
     get_BONES, get_AXES, get_best_ik_solution
 )
 from rteach.core.core_iiwa import linear_move
-from rteach.ops.ops_teach_util import update_tcp_sorted_list, find_object_by_prefix
-from rteach.config import settings_static as ss
-from rteach.core.robot_presets import ROBOT_CONFIGS
+from rteach.ops.ops_teach_util import update_tcp_sorted_list
 
 # ──────────────────────────────────────────────────────────────
 class OBJECT_OT_teach_pose(bpy.types.Operator):
@@ -69,9 +66,6 @@ class OBJECT_OT_teach_pose(bpy.types.Operator):
             return {'FINISHED'}
 
         apply_solution(arm, q_sel, frame, insert_keyframe=False)
-
-        if p.auto_record:
-            bpy.ops.object.record_tcp_point()
 
         p.status_text = f"Applied {idx+1}/{len(sols)}"
 
@@ -213,10 +207,10 @@ def sanitize_q(q_raw, dof):
 # ──────────────────────────────────────────────────────────────
 class OBJECT_OT_record_tcp_point(bpy.types.Operator):
     bl_idname = "object.record_tcp_point"
-    bl_label  = "Record Goal"
+    bl_label  = "Record Goal Pose"
 
     def execute(self, ctx):
-        p   = ctx.scene.ik_motion_props
+        p = ctx.scene.ik_motion_props
         tgt = p.goal_object
         if not tgt:
             self.report({'ERROR'}, "Goal not set")
@@ -228,93 +222,39 @@ class OBJECT_OT_record_tcp_point(bpy.types.Operator):
 
         new_idx = len([o for o in bpy.data.objects if o.name.startswith("P.")])
         dup = bpy.data.objects.new(name=f"P.{new_idx:03d}", object_data=tgt.data)
-        if "_RNA_UI" not in dup:
-            dup["_RNA_UI"] = {}
-        dup["_RNA_UI"]["speed"] = {
-            "min": 0.0, "max": 500.0,
-            "soft_min": 0.0, "soft_max": 500.0
-        }
-        dup["_RNA_UI"]["wait_time_sec"] = {
-            "min": 0.0, "max": 10.0,
-            "soft_min": 0.0, "soft_max": 10.0
-        }
-
-        dup.matrix_world = tgt.matrix_world
-        dup.scale        = tgt.scale * 0.5
-        dup["index"]     = new_idx
-        dup["motion_type"] = "LINEAR"
-        dup["fixed_q3"]  = p.fixed_q3
-        dup["speed"]     = p.motion_speed
-        dup["wait_time_sec"] = p.wait_time_sec
 
         if "_RNA_UI" not in dup:
             dup["_RNA_UI"] = {}
         dup["_RNA_UI"]["speed"] = {"min": 0.0, "max": 500.0, "soft_min": 0.0, "soft_max": 500.0}
         dup["_RNA_UI"]["wait_time_sec"] = {"min": 0.0, "max": 10.0, "soft_min": 0.0, "soft_max": 10.0}
 
+        dup.matrix_world = tgt.matrix_world
+        dup.scale = tgt.scale * 0.5
+        dup["index"] = new_idx
+        dup["motion_type"] = "LINEAR"
+        dup["fixed_q3"] = p.fixed_q3
+        dup["speed"] = p.motion_speed
+        dup["wait_time_sec"] = p.wait_time_sec
+        dup["bake_enabled"] = True
         dup.show_name = True
-        p.selected_teach_point = dup
 
-        dof = len(get_BONES())
         if p.solutions and len(p.solutions) > p.current_index:
-            q_safe = sanitize_q(p.solutions[p.current_index], dof)
+            q_safe = [float(v) for v in p.solutions[p.current_index]]
             dup["solution_index"] = p.current_index
             dup["joint_pose"] = q_safe
 
         coll.objects.link(dup)
-        update_tcp_sorted_list()
-        return {'FINISHED'}
-    
-# ──────────────────────────────────────────────────────────────
-class OBJECT_OT_cycle_pose_preview(bpy.types.Operator):
-    bl_idname = "object.cycle_pose_preview"
-    bl_label  = "Cycle IK"
 
-    direction: bpy.props.EnumProperty(
-        items=[('NEXT','Next',''),('PREV','Prev','')]
-    )
+        prev_solutions = p.solutions[:]
+        prev_idx       = p.current_index
+        update_tcp_sorted_list()                
+        p.solutions      = prev_solutions       
+        p.current_index  = prev_idx
 
-    def execute(self, ctx):
-        p = ctx.scene.ik_motion_props
-        tgt = p.goal_object
-        arm = bpy.data.objects.get(p.armature)
+        p.selected_teach_point = dup
+        p.tcp_list_index       = len(p.tcp_sorted_list) - 1
+        p.solution_index_ui    = p.current_index + 1
 
-        if not tgt:
-            self.report({'ERROR'}, "Target not set")
-            return {'CANCELLED'}
-
-        bpy.context.view_layer.update()
-        bpy.context.evaluated_depsgraph_get().update()
-
-        q = tgt.matrix_world.to_quaternion()
-        T_goal = np.eye(4)
-        T_goal[:3, :3] = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
-        T_goal[:3, 3]  = np.array(tgt.matrix_world.to_translation())
-
-        _, sols = get_best_ik_solution(p, T_goal)
-        if not sols:
-            self.report({'WARNING'}, "No IK solutions")
-            return {'CANCELLED'}
-
-        p.solutions = [list(map(float, s)) for s in sols]
-        count = len(p.solutions)
-
-        idx = p.current_index
-        if self.direction == 'NEXT':
-            idx = (idx + 1) % count
-        else:
-            idx = (idx - 1 + count) % count
-
-        p.current_index = idx
-        p.solution_index_ui = idx + 1
-        q_sel = p.solutions[idx]
-        p.ik_solution_str = str([round(math.degrees(x), 1) for x in q_sel])
-
-        if arm:
-            frame = ctx.scene.frame_current
-            apply_solution(arm, q_sel, frame, insert_keyframe=False)
-
-        p.status_text = f"Pose {idx+1}/{count} previewed"
         return {'FINISHED'}
 
 # ──────────────────────────────────────────────────────────────
@@ -379,22 +319,13 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
             self.report({'ERROR'}, "Armature / Goal / Teach data not set")
             return {'CANCELLED'}
 
-        tps_all = sorted(coll.objects, key=lambda o: o.get("index", 9999))
-
-        if p.bake_all_tcp:
-            all_indices = [tp.get("index", 9999) for tp in tps_all]
-            start_idx = min(all_indices)
-            end_idx = max(all_indices)
-        else:
-            start_idx = p.bake_start_idx
-            end_idx   = p.bake_end_idx
-
-        start_idx, end_idx = sorted((start_idx, end_idx))
-        tps = [tp for tp in tps_all if start_idx <= tp.get("index", 9999) <= end_idx]
-
+        tps = [tp for tp in coll.objects
+            if tp.name.startswith("P.") and tp.get("bake_enabled", False)]
         if not tps:
-            self.report({'WARNING'}, f"No TCPs between index {start_idx} and {end_idx}")
+            self.report({'WARNING'}, "No TCPs selected for baking")
             return {'CANCELLED'}
+
+        tps = sorted(tps, key=lambda o: o.get("index", 9999))
 
         fps            = ctx.scene.render.fps
         default_speed  = p.motion_speed
@@ -502,75 +433,6 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
                 return {'CANCELLED'}
 
             f += 1
-
-        path_coll = bpy.data.collections.get("PathVisuals") or bpy.data.collections.new("PathVisuals")
-        if path_coll.name not in {c.name for c in ctx.scene.collection.children}:
-            ctx.scene.collection.children.link(path_coll)
-        for ob in list(path_coll.objects):
-            if ob.name.startswith("MotionPath"):
-                bpy.data.objects.remove(ob, do_unlink=True)
-
-        curve = bpy.data.curves.new("MotionPath_Curve", 'CURVE')
-        curve.dimensions = '3D'
-        curve.bevel_depth = 0.001
-        spline = curve.splines.new('POLY')
-
-        obj = p.tcp_object or p.ee_object or p.goal_object
-        if not obj:
-            self.report({'ERROR'}, "EE/TCP/Gizmo object not found")
-            return {'CANCELLED'}
-
-        import math
-        pts = []
-        for fr in range(p.bake_start_frame, f + 1):
-            ctx.scene.frame_set(fr)
-            bpy.context.view_layer.update()
-            bpy.context.evaluated_depsgraph_get().update()
-            pts.append(obj.matrix_world.translation.copy())
-
-        spline.points.add(len(pts) - 1)
-        for i, v in enumerate(pts):
-            spline.points[i].co = (*v, 1)
-
-        path_obj = bpy.data.objects.new("MotionPath", curve)
-        path_coll.objects.link(path_obj)
-
-        mat_path = bpy.data.materials.get("PathLinear")
-        if not mat_path:
-            mat_path = bpy.data.materials.new("PathLinear")
-            mat_path.use_nodes = False
-            mat_path.diffuse_color = (1, 1, 0, 0.8)
-            mat_path.blend_method = 'BLEND'
-        curve.materials.clear()
-        curve.materials.append(mat_path)
-
-        dist = [0.0]
-        for i in range(1, len(pts)):
-            dist.append(dist[-1] + (pts[i] - pts[i - 1]).length)
-        total_len = dist[-1] if dist[-1] > 0 else 1e-6
-
-        curve.bevel_factor_end = 0.0
-        curve.keyframe_insert("bevel_factor_end", frame=p.bake_start_frame)
-
-        for i, fr in enumerate(range(p.bake_start_frame + 1, f + 1), start=1):
-            progress = dist[i] / total_len
-            if not math.isclose(progress, dist[i - 1] / total_len, abs_tol=1e-6):
-                curve.bevel_factor_end = progress
-                curve.keyframe_insert("bevel_factor_end", frame=fr)
-
-        if curve.animation_data:
-            curve.animation_data.action.fcurves[0].extrapolation = 'CONSTANT'
-
-        # ▶ apply consistent path material
-        mat_path = bpy.data.materials.get("PathLinear")
-        if not mat_path:
-            mat_path = bpy.data.materials.new("PathLinear")
-            mat_path.use_nodes = False
-            mat_path.diffuse_color = (1, 1, 0, 0.8)
-            mat_path.blend_method = 'BLEND'
-
-        curve.materials.clear()
-        curve.materials.append(mat_path)
 
         self.report({'INFO'}, "Bake finished")
         return {'FINISHED'}
@@ -703,52 +565,6 @@ def preview_obj_pose(ctx, obj, forward: bool):
 
     p.status_text = f"Preview {obj.name} (IK pose {idx+1})"
     return {'FINISHED'}
-
-# ────────────────────────────────────────────────────────────── 
-class OBJECT_OT_preview_tcp_next(bpy.types.Operator):
-    bl_idname = "object.preview_tcp_next"
-    bl_label = "Next TCP Pose"
-
-    def execute(self, ctx):
-        p = ctx.scene.ik_motion_props
-        coll = bpy.data.collections.get("Teach data")
-        if not coll or not coll.objects:
-            self.report({'INFO'}, "No Waypoints")
-            return {'CANCELLED'}
-
-        lst = sorted(coll.objects, key=lambda o: o.get("index", 9999))
-        p.preview_tcp_index = (p.preview_tcp_index + 1) % len(lst)
-        obj = lst[p.preview_tcp_index]
-
-        for o in ctx.selected_objects:
-            o.select_set(False)
-        obj.select_set(True)
-        ctx.view_layer.objects.active = obj
-
-        return preview_obj_pose(ctx, obj, forward=True)
-    
-# ────────────────────────────────────────────────────────────── 
-class OBJECT_OT_preview_tcp_prev(bpy.types.Operator):
-    bl_idname = "object.preview_tcp_prev"
-    bl_label = "Prev TCP Pose"
-
-    def execute(self, ctx):
-        p = ctx.scene.ik_motion_props
-        coll = bpy.data.collections.get("Teach data")
-        if not coll or not coll.objects:
-            self.report({'INFO'}, "No Waypoints")
-            return {'CANCELLED'}
-
-        lst = sorted(coll.objects, key=lambda o: o.get("index", 9999))
-        p.preview_tcp_index = (p.preview_tcp_index - 1 + len(lst)) % len(lst)
-        obj = lst[p.preview_tcp_index]
-
-        for o in ctx.selected_objects:
-            o.select_set(False)
-        obj.select_set(True)
-        ctx.view_layer.objects.active = obj
-
-        return preview_obj_pose(ctx, obj, forward=False)
 
 # ────────────────────────────────────────────────────────────── 
 class OBJECT_OT_toggle_motion_type(bpy.types.Operator):
@@ -896,62 +712,30 @@ class OBJECT_OT_apply_global_wait(bpy.types.Operator):
 # ──────────────────────────────────────────────────────────────   
 class OBJECT_OT_tcp_list_select(bpy.types.Operator):
     bl_idname = "object.tcp_list_select"
-    bl_label = "Snap + Preview"
-
+    bl_label  = "Select TCP from List"
     index: bpy.props.IntProperty()
 
     def execute(self, ctx):
         p = ctx.scene.ik_motion_props
-
-        if not (0 <= self.index < len(p.tcp_sorted_list)):
+        lst = p.tcp_sorted_list
+        if not lst:
             return {'CANCELLED'}
 
-        name = p.tcp_sorted_list[self.index].name
-        obj = bpy.data.objects.get(name)
+        if self.index < 0 or self.index >= len(lst):
+            return {'CANCELLED'}
+
+        tcp_item = lst[self.index]
+        obj = bpy.data.objects.get(tcp_item.name)
         if not obj:
             return {'CANCELLED'}
 
         p.selected_teach_point = obj
         p.tcp_list_index = self.index
 
-        from rteach.ops.ops_teach_main import preview_obj_pose
-        return preview_obj_pose(ctx, obj, forward=False)
-    
-# ──────────────────────────────────────────────────────────────    
-class OBJECT_OT_keyframe_joint_pose(bpy.types.Operator):
-    bl_idname = "object.keyframe_joint_pose"
-    bl_label = "Keyframe Pose"
-    bl_description = "Insert keyframes for the current Jog slider pose at current frame"
-
-    def execute(self, ctx):
-        p = ctx.scene.ik_motion_props
-        jog = ctx.scene.jog_props
         arm = bpy.data.objects.get(p.armature)
+        if "joint_pose" in obj and arm:
+            apply_solution(arm, list(obj["joint_pose"]), ctx.scene.frame_current, insert_keyframe=False)
 
-        if not arm:
-            self.report({'ERROR'}, "Armature not found")
-            return {'CANCELLED'}
-
-        bones = get_BONES()
-        axes  = get_AXES()
-
-        frame = ctx.scene.frame_current
-        for i, bn in enumerate(bones):
-            pb = arm.pose.bones.get(bn)
-            if not pb:
-                continue
-
-            axis = axes[i]
-            angle = getattr(jog, f"joint_{i}", 0.0)
-            pb.rotation_mode = 'XYZ'
-            rot = [0, 0, 0]
-            idx = {'x': 0, 'y': 1, 'z': 2}[axis]
-            rot[idx] = angle
-            pb.rotation_euler = rot
-            pb.keyframe_insert(data_path="rotation_euler", frame=frame, index=idx)
-
-        self.report({'INFO'}, f"Keyframes inserted at frame {frame}")
-        p.status_text = f"Jog pose keyframed at frame {frame}"
         return {'FINISHED'}
     
 # ──────────────────────────────────────────────────────────────    
@@ -1026,303 +810,78 @@ class OBJECT_OT_recompute_selected_tcp(bpy.types.Operator):
         return {'FINISHED'}
     
 # ──────────────────────────────────────────────────────────────    
-class OBJECT_OT_keyframe_stage_joint(bpy.types.Operator):
-    bl_idname = "object.keyframe_stage_joint"
-    bl_label = "Insert Stage Keyframe"
-
-    name: bpy.props.StringProperty()
-
-    def execute(self, ctx):
-        props = ctx.scene.stage_props
-        value = getattr(props, self.name, None)
-        obj = bpy.data.objects.get(self.name)
-
-        if obj is None:
-            self.report({'ERROR'}, f"Object '{self.name}' not found")
-            return {'CANCELLED'}
-
-        robot = ctx.scene.ik_motion_props.robot_type
-        config = ROBOT_CONFIGS.get(robot, {})
-        stage_joints = config.get("stage_joints", [])
-
-        axis = None
-        joint_type = None
-
-        for sj in stage_joints:
-            if sj[0] == self.name:
-                axis = sj[5]  
-                joint_type = sj[6] 
-                break
-
-        if axis is None or joint_type is None:
-            self.report({'ERROR'}, f"Joint definition not found for '{self.name}'")
-            return {'CANCELLED'}
-
-        idx = {"x": 0, "y": 1, "z": 2}.get(axis.lower(), 0)
-        frame = ctx.scene.frame_current
-
-        if joint_type == "location":
-            obj.location[idx] = value
-            obj.keyframe_insert(data_path="location", frame=frame, index=idx)
-        elif joint_type == "rotation":
-            obj.rotation_mode = 'XYZ'
-            obj.rotation_euler[idx] = value
-            obj.keyframe_insert(data_path="rotation_euler", frame=frame, index=idx)
-
-        self.report({'INFO'}, f"Keyframed {self.name} at frame {frame} ({joint_type}.{axis})")
-        return {'FINISHED'}
-    
-# ──────────────────────────────────────────────────────────────    
-class OBJECT_OT_focus_stage_joint(bpy.types.Operator):
-    bl_idname = "object.focus_stage_joint"
-    bl_label = "Select Joint in Viewport"
-
-    name: bpy.props.StringProperty()
-
-    def execute(self, ctx):
-        obj = bpy.data.objects.get(self.name)
-        if not obj:
-            self.report({'ERROR'}, f"Object '{self.name}' not found")
-            return {'CANCELLED'}
-
-        for o in ctx.selected_objects:
-            o.select_set(False)
-
-        obj.select_set(True)
-        ctx.view_layer.objects.active = obj
-
-        self.report({'INFO'}, f"Selected {obj.name}")
-        return {'FINISHED'}
-    
-# ────────────────────────────────────────────────────────────── 
-class OBJECT_OT_snap_target_to_fk(bpy.types.Operator):
-    bl_idname = "object.snap_target_to_fk"
-    bl_label = "Snap Target to FK"
+class OBJECT_OT_preview_goal_pose(bpy.types.Operator):
+    bl_idname = "object.preview_goal_pose"
+    bl_label  = "Preview Goal Pose"
 
     def execute(self, ctx):
         p = ctx.scene.ik_motion_props
-        arm = bpy.data.objects.get(p.armature)
-        goal = p.goal_object
-        if not arm or not goal:
-            self.report({'ERROR'}, "Armature or Goal object not set")
-            return {'CANCELLED'}
-
-        bones = get_BONES()
-        axes = get_AXES()
-        q = []
-
-        for i, bn in enumerate(bones):
-            pb = arm.pose.bones.get(bn)
-            if not pb:
-                q.append(0.0)
-                continue
-            axis = axes[i]
-            angle = getattr(pb.rotation_euler, axis)
-            q.append(angle)
-
-        fk_func = get_forward_kinematics()
-        T = fk_func(q)
-
-        T_full = compute_base_matrix(p) @ T @ compute_tcp_offset_matrix(p)
-        goal.matrix_world = Matrix(T_full)
-        goal.scale = (1, 1, 1)
-
-        p.status_text = "Target snapped to FK"
+        bpy.ops.object.teach_pose('EXEC_DEFAULT')
+        p.selected_teach_point = None            
+        p.tcp_list_index = -1                    
         return {'FINISHED'}
     
-# ──────────────────────────────────────────────────────────────   
-class OBJECT_OT_go_home_pose(bpy.types.Operator):
-    bl_idname = "object.go_home_pose"
-    bl_label = "Go Home Pose"
+class OBJECT_OT_record_goal_pose(bpy.types.Operator):
+    bl_idname = "object.record_goal_pose"
+    bl_label  = "Record Goal Pose"
 
     def execute(self, ctx):
-        p = ctx.scene.ik_motion_props
-        arm = bpy.data.objects.get(p.armature)
-        if not arm:
-            self.report({'ERROR'}, "Armature not found")
-            return {'CANCELLED'}
-
-        bones = get_BONES()
-        axes  = get_AXES()
-
-        for i, bn in enumerate(bones):
-            pb = arm.pose.bones.get(bn)
-            if not pb:
-                continue
-            axis = axes[i]
-            pb.rotation_mode = 'XYZ'
-            rot = [0.0, 0.0, 0.0]
-            idx = {'x': 0, 'y': 1, 'z': 2}[axis]
-            rot[idx] = 0.0
-            pb.rotation_euler = rot
-            pb.keyframe_insert(data_path="rotation_euler", frame=ctx.scene.frame_current, index=idx)
-
-        p.status_text = "Home pose applied"
-        return {'FINISHED'}
-    
-# ────────────────────────────────────────────────────────────── 
-class OBJECT_OT_setup_tcp_from_gizmo(bpy.types.Operator):
-    bl_idname = "object.setup_tcp_from_gizmo"
-    bl_label  = "Create TCP from Gizmo"
-
-    def execute(self, ctx):
-        p, ee, tgt = ctx.scene.ik_motion_props, ctx.scene.ik_motion_props.ee_object, ctx.scene.ik_motion_props.goal_object
-        if not ee or not tgt:
-            self.report({'ERROR'}, "EE or Target Gizmo not set")
-            return {'CANCELLED'}
-
-        vis_name, real_name = "TCP_visible", "TCP"
-
-        for nm in (vis_name, real_name):
-            o = bpy.data.objects.get(nm)
-            if o:
-                bpy.data.objects.remove(o, do_unlink=True)
-
-        setup = bpy.data.collections.get("Setup") or ctx.scene.collection
-
-        ee_mat, tgt_mat = ee.matrix_world.copy(), tgt.matrix_world.copy()
-        ee_loc, ee_rot3 = ee_mat.to_translation(), ee_mat.to_3x3()
-        tgt_loc, tgt_rot3 = tgt_mat.to_translation(), tgt_mat.to_3x3()
-
-        v_local = ee_mat.inverted() @ tgt_loc   
-
-        if get_armature_type(p.robot_type) == "KUKA":
-            R_corr3    = Euler((0, math.radians(90), 0), 'XYZ').to_matrix()
-            v_corr     = R_corr3 @ v_local
-            final_rot3 = tgt_rot3 @ R_corr3
-        else:                                   
-            v_corr     = v_local
-            final_rot3 = ee_rot3                
-
-        final_loc = ee_loc + ee_rot3 @ v_corr
-
-        tcp_vis = bpy.data.objects.new(vis_name, None)
-        tcp_vis.empty_display_type, tcp_vis.empty_display_size = 'SPHERE', 0.02
-        setup.objects.link(tcp_vis)
-        tcp_vis.matrix_world = tgt_mat
-        tcp_vis.parent, tcp_vis.matrix_parent_inverse = ee, ee.matrix_world.inverted()
-
-        tcp_real = bpy.data.objects.new(real_name, None)
-        tcp_real.empty_display_type, tcp_real.empty_display_size = 'ARROWS', 0.015
-        setup.objects.link(tcp_real)
-        tcp_real.parent, tcp_real.matrix_parent_inverse = tcp_vis, tcp_vis.matrix_world.inverted()
-        tcp_real.matrix_world = Matrix.Translation(final_loc) @ final_rot3.to_4x4()
-
-        for o in (tcp_vis, tcp_real):
-            o.hide_viewport = o.hide_render = o.hide_select = False
-
-        p.tcp_object = tcp_real
-        self.report({'INFO'}, f"TCP pair created (rotation offset disabled for UR)")
-        return {'FINISHED'}
+        result = bpy.ops.object.teach_pose('EXEC_DEFAULT')  # apply IK
+        if result == {'FINISHED'}:
+            return bpy.ops.object.record_tcp_point('EXEC_DEFAULT')  # create TCP
+        return result
     
 # ──────────────────────────────────────────────────────────────  
-class OBJECT_OT_sync_robot_type(bpy.types.Operator):
-    bl_idname = "object.sync_robot_type"
-    bl_label = "Sync Robot Type"
+class OBJECT_OT_preview_tcp_prev_pose(bpy.types.Operator):
+    bl_idname = "object.preview_tcp_prev_pose"
+    bl_label  = "Prev TCP + Pose"
 
     def execute(self, ctx):
-
         p = ctx.scene.ik_motion_props
-        robot = p.robot_type.lower()
-        print(f"[DEBUG] Syncing JogProperties for robot: {robot}")
+        lst = p.tcp_sorted_list
+        if not lst:
+            return {'CANCELLED'}
 
-        ss.unregister_static_properties()
-        ss.register_static_properties(robot)
-        bpy.utils.register_class(ss.JogProperties)
-        bpy.types.Scene.jog_props = bpy.props.PointerProperty(type=ss.JogProperties)
-
-        config = ROBOT_CONFIGS.get(robot, {})
-        dof = len(config.get("axes", []))
-        n_stage = len(config.get("stage_joints", []))
-        total = dof + n_stage
-        print(f"[DEBUG] Robot DOF={dof}, stage joints={n_stage}, total plot joints={total}")
-
-        default_plot = [True] * total
-        if len(default_plot) < 14:
-            default_plot += [False] * (14 - len(default_plot))
-        p.show_plot_joints = default_plot[:14]
-
-        setup = config.get("setup_objects", {})
-        for key in ["goal", "base", "tcp", "ee"]:
-            name = setup.get(key)
-            if not isinstance(name, str) or not name.strip():
-                print(f"[SYNC] Skipping {key}_object (name missing)")
-                continue
-            obj = find_object_by_prefix(name)
+        if p.tcp_list_index > 0:
+            p.tcp_list_index -= 1
+            tcp_item = lst[p.tcp_list_index]
+            obj = bpy.data.objects.get(tcp_item.name)
             if obj:
-                setattr(p, f"{key}_object", obj)
-                print(f"[SYNC] {key}_object → {obj.name}")
-            else:
-                print(f"[SYNC] {key}_object not found (name='{name}')")
-
-        arm_sets = config.get("armature_sets", {})
-        arm_name = getattr(p, "armature", "")
-        if arm_name in arm_sets:
-            print(f"[SYNC] Applying armature_set: {arm_name}")
-            arm_cfg = arm_sets[arm_name]
-            p.base_object = find_object_by_prefix(arm_cfg.get("base", ""))
-            p.ee_object   = find_object_by_prefix(arm_cfg.get("ee", ""))
-            p.tcp_object  = find_object_by_prefix(arm_cfg.get("tcp", ""))
-        else:
-            print(f"[SYNC] No matching armature_set found for: {arm_name}")
-
-        def trigger_workspace_visibility_refresh():
-            p = bpy.context.scene.ik_motion_props
-            if not p.armature or not p.robot_type:
-                return 0.1  
-
-            if p.show_workspace:
-                p.show_workspace = False
-                p.show_workspace = True
-            else:
-                pass
-
-            return None 
-
-        bpy.app.timers.register(trigger_workspace_visibility_refresh, first_interval=0.1)
-
+                p.selected_teach_point = obj
+                apply_selected_tcp_pose(ctx)
         return {'FINISHED'}
-    
-# ──────────────────────────────────────────────────────────────
-def set_workspace_visibility():
-    p = bpy.context.scene.ik_motion_props
-    robot_key = p.robot_type.lower()
 
-    for ob in bpy.data.objects:
-        if ob.name.startswith("Workspace_"):
-            is_current = ob.name == f"Workspace_{robot_key}"
-            visible = p.show_workspace and is_current
-            ob.hide_viewport = not visible
-            ob.hide_render = not visible
-            ob.hide_set(not visible)
 
-class OBJECT_OT_toggle_workspace_visibility(bpy.types.Operator):
-    bl_idname = "object.toggle_workspace_visibility"
-    bl_label = "Toggle Workspace Visibility"
+class OBJECT_OT_preview_tcp_next_pose(bpy.types.Operator):
+    bl_idname = "object.preview_tcp_next_pose"
+    bl_label  = "Next TCP + Pose"
 
     def execute(self, ctx):
         p = ctx.scene.ik_motion_props
-        robot_key = p.robot_type.lower()
-        config = ROBOT_CONFIGS.get(robot_key, {})
+        lst = p.tcp_sorted_list
+        if not lst:
+            return {'CANCELLED'}
 
-        arm_solver_map = config.get("armature_solver_map", {})
-        active_solver_key = arm_solver_map.get(p.armature, robot_key)
-
-        workspace_name_expected = f"Workspace_{active_solver_key}"
-        tokens = p.armature.split("_")
-        suffix = tokens[1] if len(tokens) >= 2 else ""
-        if suffix.upper() in {"L", "R"}:
-            workspace_name_expected += f"_{suffix.lower()}"
-
-        for ob in bpy.data.objects:
-            if ob.name.startswith("Workspace_"):
-                is_current = ob.name.lower() == workspace_name_expected.lower()
-                visible = p.show_workspace and is_current
-                ob.hide_viewport = not visible
-                ob.hide_render = not visible
-                ob.hide_set(not visible)
-
+        if p.tcp_list_index < len(lst) - 1:
+            p.tcp_list_index += 1
+            tcp_item = lst[p.tcp_list_index]
+            obj = bpy.data.objects.get(tcp_item.name)
+            if obj:
+                p.selected_teach_point = obj
+                apply_selected_tcp_pose(ctx)
         return {'FINISHED'}
+
+    
+def apply_selected_tcp_pose(ctx):
+    p   = ctx.scene.ik_motion_props
+    tcp = p.selected_teach_point
+    if not tcp or "joint_pose" not in tcp:
+        return
+    arm = bpy.data.objects.get(p.armature)
+    if arm:
+        apply_solution(arm, list(tcp["joint_pose"]),
+                       ctx.scene.frame_current,
+                       insert_keyframe=False)
 
 # ──────────────────────────────────────────────────────────────    
 classes = (
@@ -1330,25 +889,18 @@ classes = (
     OBJECT_OT_execute_linear_motion,
     OBJECT_OT_record_tcp_point,
     OBJECT_OT_apply_preview_pose,
-    OBJECT_OT_cycle_pose_preview,
     OBJECT_OT_bake_teach_sequence,
     OBJECT_OT_update_tcp_pose,
-    OBJECT_OT_preview_tcp_next,
-    OBJECT_OT_preview_tcp_prev,
     OBJECT_OT_toggle_motion_type,
     OBJECT_OT_clear_bake_keys,
     OBJECT_OT_snap_gizmo_on_path,
     OBJECT_OT_apply_global_wait,
     OBJECT_OT_apply_global_speed,
     OBJECT_OT_tcp_list_select,
-    OBJECT_OT_keyframe_joint_pose,
     OBJECT_OT_record_tcp_from_jog,
     OBJECT_OT_recompute_selected_tcp,
-    OBJECT_OT_keyframe_stage_joint,
-    OBJECT_OT_focus_stage_joint,
-    OBJECT_OT_snap_target_to_fk,
-    OBJECT_OT_go_home_pose,
-    OBJECT_OT_setup_tcp_from_gizmo,
-    OBJECT_OT_sync_robot_type,
-    OBJECT_OT_toggle_workspace_visibility,
+    OBJECT_OT_preview_goal_pose,
+    OBJECT_OT_record_goal_pose,
+    OBJECT_OT_preview_tcp_prev_pose,
+    OBJECT_OT_preview_tcp_next_pose,
 )
