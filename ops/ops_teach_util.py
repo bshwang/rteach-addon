@@ -67,11 +67,6 @@ class OBJECT_OT_draw_teach_path(bpy.types.Operator):
         if pv.name not in {c.name for c in ctx.scene.collection.children}:
             ctx.scene.collection.children.link(pv)
 
-        for ob in list(pv.objects):
-            if ob.name.startswith("MotionPath"):
-                continue
-            bpy.data.objects.remove(ob, do_unlink=True)
-
         for ob in list(bpy.data.objects):
             if ob.name == "TeachPath":
                 bpy.data.objects.remove(ob, do_unlink=True)
@@ -655,45 +650,74 @@ class OBJECT_OT_slide_robot_next(bpy.types.Operator):
         setattr(ctx.scene, self.group, (idx + 1) % 99)
         return {'FINISHED'}
     
+# ──────────────────────────────────────────────────────────────  
 class OBJECT_OT_pick_object(bpy.types.Operator):
     bl_idname = "object.pick_object"
     bl_label = "Pick Object"
 
     def execute(self, ctx):
         tcp = get_tcp_object()
-        if not tcp:
-            self.report({'ERROR'}, "TCP not found")
+        if not ctx.active_object:
+            self.report({'ERROR'}, "No active object")
             return {'CANCELLED'}
+
         sel = ctx.selected_objects
         if not sel:
-            self.report({'ERROR'}, "No object selected")
+            self.report({'ERROR'}, "Nothing selected")
             return {'CANCELLED'}
+
         child = ctx.active_object
-        if child == tcp:
-            self.report({'ERROR'}, "Select target object, not TCP")
+        if len(sel) == 1:
+            parent = tcp
+        else:
+            if tcp in sel:
+                parent = tcp
+            else:
+                parent = sel[0] if sel[0] != child else sel[1]
+
+        if not parent or parent == child:
+            self.report({'ERROR'}, "Parent selection failed")
             return {'CANCELLED'}
+        
+        const = dp.get_last_dynamic_parent_constraint(child)
+        if const and const.influence == 1:
+            dp.disable_constraint(child, const, ctx.scene.frame_current)
+            self._set_const_interp(child, const.name)
 
         prev_active = ctx.view_layer.objects.active
-        prev_sel = [o for o in sel]
-
-        for o in ctx.selected_objects:
+        prev_sel = sel[:]
+        for o in prev_sel:
             o.select_set(False)
-        tcp.select_set(True)
+        parent.select_set(True)
         child.select_set(True)
         ctx.view_layer.objects.active = child
 
         dp.dp_create_dynamic_parent_obj(self)
 
-        if prev_active:
-            ctx.view_layer.objects.active = prev_active
+        new_const = child.constraints[-1]
+        self._set_const_interp(child, new_const.name)
+
         for o in ctx.selected_objects:
             o.select_set(False)
         for o in prev_sel:
             o.select_set(True)
+        if prev_active:
+            ctx.view_layer.objects.active = prev_active
 
         return {'FINISHED'}
-    
-# ──────────────────────────────────────────────────────────────  
+
+    def _set_const_interp(self, obj, const_name):
+        ad = obj.animation_data
+        if not ad or not ad.action:
+            return
+        path = f'constraints["{const_name}"].influence'
+        fc = ad.action.fcurves.find(path)
+        if not fc:
+            return
+        for kp in fc.keyframe_points:
+            kp.interpolation = 'CONSTANT'
+        fc.update()
+
 class OBJECT_OT_place_object(bpy.types.Operator):
     bl_idname = "object.place_object"
     bl_label = "Place Object"
@@ -703,11 +727,65 @@ class OBJECT_OT_place_object(bpy.types.Operator):
         if not obj:
             self.report({'ERROR'}, "No active object")
             return {'CANCELLED'}
+
         const = dp.get_last_dynamic_parent_constraint(obj)
-        if not const:
-            self.report({'WARNING'}, "No dynamic parent constraint")
+        if not const or const.influence == 0:
+            self.report({'WARNING'}, "No dynamic‑parent to disable")
             return {'CANCELLED'}
+
         dp.disable_constraint(obj, const, ctx.scene.frame_current)
+        ad = obj.animation_data
+        if ad and ad.action:
+            fc = ad.action.fcurves.find(f'constraints["{const.name}"].influence')
+            if fc:
+                for kp in fc.keyframe_points:
+                    kp.interpolation = 'CONSTANT'
+                fc.update()
+        return {'FINISHED'}
+
+class OBJECT_OT_clear_dynamic_parent(bpy.types.Operator):
+    bl_idname = "object.clear_dynamic_parent"
+    bl_label = "Clear DP"
+
+    def execute(self, ctx):
+        obj = ctx.active_object
+        if not obj:
+            self.report({'ERROR'}, "No active object")
+            return {'CANCELLED'}
+
+        pbone = None
+        if obj.type == 'ARMATURE':
+            pbone = ctx.active_pose_bone
+
+        dp.dp_clear(obj, pbone)
+        return {'FINISHED'}
+    
+# ────────────────────────────────────────────────────────────── 
+class OBJECT_OT_tcp_bake_select_all(bpy.types.Operator):
+    bl_idname = "object.tcp_bake_select_all"
+    bl_label  = "Select/Deselect All"
+    mode: bpy.props.EnumProperty(items=[("ON","ON",""), ("OFF","OFF","")])
+
+    def execute(self, ctx):
+        tps = [o for o in bpy.data.collections.get("Teach data").objects if o.name.startswith("P.")]
+        for tp in tps:
+            tp["bake_enabled"] = (self.mode == "ON")
+        return {'FINISHED'}
+
+# ────────────────────────────────────────────────────────────── 
+class OBJECT_OT_toggle_tcp_bake_all(bpy.types.Operator):
+    bl_idname = "object.toggle_tcp_bake_all"
+    bl_label  = "Toggle All TCP Bake"
+    bl_description = "Toggle all bake checkboxes ON/OFF"
+
+    def execute(self, ctx):
+        scene = ctx.scene
+        state = not getattr(scene, "bake_all_state", False)
+        tps = bpy.data.collections.get("Teach data").objects
+        for tp in tps:
+            if tp.name.startswith("P."):
+                tp["bake_enabled"] = state
+        scene.bake_all_state = state  # 저장 상태 toggle
         return {'FINISHED'}
 
 # ──────────────────────────────────────────────────────────────   
@@ -732,4 +810,7 @@ classes = (
     OBJECT_OT_slide_robot_next,
     OBJECT_OT_pick_object,
     OBJECT_OT_place_object,
+    OBJECT_OT_clear_dynamic_parent,
+    OBJECT_OT_tcp_bake_select_all,
+    OBJECT_OT_toggle_tcp_bake_all,
 )
