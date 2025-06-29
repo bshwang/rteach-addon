@@ -52,9 +52,17 @@ class UI_UL_tcp_list(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         if item and item.name:
             obj = bpy.data.objects.get(item.name)
+
+            if obj and "bake_enabled" not in obj:
+                obj["bake_enabled"] = True  
+
             idx = obj.get("index", "?") if obj else "?"
             label = f"{item.name} [#{idx}]"
-            op = layout.operator("object.tcp_list_select", text=label, emboss=False, icon='EMPTY_AXIS')
+
+            row = layout.row(align=True)
+            if obj:
+                row.prop(obj, '["bake_enabled"]', text="")  
+            op = row.operator("object.tcp_list_select", text=label, emboss=False, icon='EMPTY_AXIS')
             op.index = index
 
 def draw_robot_slide_section(layout, keys, slide_prop_name):
@@ -105,12 +113,9 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         self.draw_robot_selector(L, ctx)
         self.draw_setup_section(L, ctx)
         self.draw_target_section(L, ctx)
-        self.draw_pick_place_section(L, ctx)
         self.draw_jog_section(L, ctx)
         self.draw_stage_jog_section(L, ctx)
-        self.draw_step1(L, ctx)
-        self.draw_step2(L, ctx)
-        self.draw_step3(L, ctx)
+        self.draw_tcp_manager(L, ctx)
         self.draw_io_section(L, ctx)
 
     def draw_robot_selector(self, L, ctx):
@@ -163,7 +168,13 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         box.prop(p, "armature", text="Armature")
         box.prop(p, "base_object", text="Robot Base")
         box.prop(p, "ee_object", text="Flange")
-        box.prop(p, "tcp_object", text="TCP")
+
+        row = box.row(align=True)
+        row.prop(p, "tcp_object", text="TCP")
+        row.operator("object.setup_tcp_from_gizmo", text="", icon='EMPTY_ARROWS')
+        icon = 'CHECKBOX_HLT' if p.show_workspace else 'CHECKBOX_DEHLT'
+        row = box.row()
+        row.prop(p, "show_workspace", text="Show Workspace", toggle=True, icon=icon)
 
         if config.get("armature_sets"):
             row = box.row(align=True)
@@ -177,7 +188,9 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         icon = 'TRIA_DOWN' if p.show_target else 'TRIA_RIGHT'
         row.prop(p, "show_target", icon=icon, text="Target Pose", emboss=False)
         if p.show_target and p.goal_object:
-            box.prop(p, "goal_object", text="Target")
+            row = box.row(align=True)
+            row.prop(p, "goal_object", text="Target")
+            row.operator("object.focus_on_target", text="", icon='RESTRICT_SELECT_OFF')
             row = box.row(align=True)
             row.prop(p.goal_object, 'location', index=0, text="X")
             row.prop(p.goal_object, 'rotation_euler', index=0, text="RX")
@@ -187,26 +200,6 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row = box.row(align=True)
             row.prop(p.goal_object, 'location', index=2, text="Z")
             row.prop(p.goal_object, 'rotation_euler', index=2, text="RZ")
-            row = box.row(align=True)
-            row.operator("object.focus_on_target", text="Select", icon='RESTRICT_SELECT_OFF')
-            row.operator("object.snap_goal_to_active", text="Snap to Active", icon='PIVOT_ACTIVE')
-            row = box.row(align=True)
-            row.operator("object.snap_target_to_fk", text="Snap to FK", icon='CONSTRAINT')
-            row.operator("object.setup_tcp_from_gizmo", text="Set as TCP", icon='EMPTY_ARROWS')
-
-    def draw_pick_place_section(self, L, ctx):
-        p = ctx.scene.ik_motion_props
-        box = L.box()
-        row = box.row()
-        icon = 'TRIA_DOWN' if p.show_pick_place else 'TRIA_RIGHT'
-        row.prop(p, "show_pick_place", icon=icon, text="Pick / Place", emboss=False)
-
-        if not p.show_pick_place:
-            return
-
-        row = box.row(align=True)
-        row.operator("object.pick_object", text="Pick", icon='LINKED')
-        row.operator("object.place_object", text="Place", icon='UNLINKED')
 
     def draw_jog_section(self, L, ctx):
 
@@ -253,135 +246,128 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row.operator("object.record_tcp_from_jog", text="Waypoint", icon='EMPTY_AXIS')
         row.operator("object.go_home_pose", text="Home", icon='HOME')
 
-        icon = 'CHECKBOX_HLT' if p.show_workspace else 'CHECKBOX_DEHLT'
-        row = box.row()
-        row.prop(p, "show_workspace", text="Show Workspace", toggle=True, icon=icon)
-
-    def draw_step1(self, L, ctx):
-
+    def draw_tcp_manager(self, L, ctx):
         p = ctx.scene.ik_motion_props
+        obj = p.selected_teach_point
+        icon = 'TRIA_DOWN' if p.show_teach else 'TRIA_RIGHT'
+
         box = L.box()
         row = box.row()
-        icon = 'TRIA_DOWN' if p.show_step1 else 'TRIA_RIGHT'
-        row.prop(p, "show_step1", icon=icon, text="Step 1: Teach Point", emboss=False)
-        if not p.show_step1:
+        row.prop(p, "show_teach", icon=icon, text="Motion Teaching", emboss=False)
+
+        if not p.show_teach:
             return
 
-        row = box.row(align=True)
-        row.operator("object.teach_pose", text="Go To", icon='VIEW_CAMERA')
-        row.prop(p, "auto_record", text="", toggle=True, icon='REC')
+        box.label(text="🔸 Waypoint manager")
 
-        if get_armature_type(p.robot_type) == "KUKA":
-            row = box.row(align=True)
-            row.label(text="R angle(q3)")
-            sub = row.row()
-            sub.scale_x = 1.2
-            sub.prop(p, "fixed_q3_deg", text="", slider=True)
-
-        split = box.split(factor=0.4, align=True)
-        split.prop(p, "solution_index_ui", text="Index")
-
-        right = split.split(factor=0.7, align=True)
-        left_btns = right.row(align=True)
-        left_btns.operator("object.cycle_pose_preview", text="◀").direction = 'PREV'
-        left_btns.operator("object.cycle_pose_preview", text="▶").direction = 'NEXT'
-        right.operator("object.apply_preview_pose", text="", icon='CHECKMARK')
-
-    def draw_step2(self, L, ctx):
-        p = ctx.scene.ik_motion_props
-        box = L.box()
         row = box.row()
-        icon = 'TRIA_DOWN' if p.show_step2 else 'TRIA_RIGHT'
-        row.prop(p, "show_step2", icon=icon, text="Step 2: Path & Editing", emboss=False)
-        if not p.show_step2:
-            return
+
+        list_col = row.column()
+        list_col.template_list("UI_UL_tcp_list", "", p, "tcp_sorted_list", p, "tcp_list_index", rows=6)
+
+        btn_col = row.column(align=True)
+        btn_col.operator("object.refresh_tcp_list", text="", icon='FILE_REFRESH')
+        btn_col.operator("object.reindex_tcp_points", text="", icon='SORTALPHA')
+        btn_col.operator("object.tcp_move_up", text="", icon='TRIA_UP')
+        btn_col.operator("object.tcp_move_down", text="", icon='TRIA_DOWN')
+        btn_col.operator("object.tcp_delete", text="", icon='X').name = obj.name if obj else ""
+        btn_col.operator("object.clear_all_tcp_points", text="", icon='TRASH')
+        btn_col.operator("object.toggle_tcp_bake_all", text="", icon='CHECKBOX_HLT' if getattr(ctx.scene, "bake_all_state", False) else 'CHECKBOX_DEHLT')
 
         row = box.row(align=True)
-        row.template_list("UI_UL_tcp_list", "", p, "tcp_sorted_list", p, "tcp_list_index")
-
-        col = row.column(align=True)
-        col.operator("object.tcp_move_up", text="", icon='TRIA_UP')
-        col.operator("object.tcp_move_down", text="", icon='TRIA_DOWN')
-        if p.selected_teach_point:
-            op = col.operator("object.tcp_delete", text="", icon='X')
-            op.name = p.selected_teach_point.name
+        if obj:
+            idx = obj.get("index", "?")
+            row.label(text=f"Selected: {obj.name} [#{idx}]", icon='PINNED')
+            row.operator("object.preview_tcp_prev_pose", text="", icon='BACK')
+            row.operator("object.preview_tcp_next_pose", text="", icon='FORWARD')
         else:
-            col.label(icon='BLANK1')
-        col.operator("object.clear_all_tcp_points", text="", icon='TRASH')
-        col.operator("object.refresh_tcp_list", text="", icon='FILE_REFRESH')
-        col.operator("object.reindex_tcp_points", text="", icon='SORTALPHA')
+            row.label(text="Selected: None", icon='PINNED')
 
+        # Motion
         row = box.row(align=True)
-        row.prop(p, "selected_teach_point", text="")
-        row.operator("object.preview_tcp_prev", text="", icon='FRAME_PREV')
-        row.operator("object.preview_tcp_next", text="", icon='FRAME_NEXT')
-        row.operator("object.update_tcp_pose", text="Update WP", icon='EXPORT')
-        row = box.row(align=True)
-        
-        row.operator("object.toggle_path_visibility", text="Show/Hide Path", icon='HIDE_OFF')
-        row.operator("object.draw_teach_path", text="", icon='FILE_REFRESH')
-
-        obj = p.selected_teach_point
+        row.label(text="Motion:")
         if obj:
-            box.label(text="Path Interpolation")
+            row.operator("object.toggle_motion_type", text="", icon='FILE_REFRESH')
+            motion = obj.get("motion_type", "?")
+            row.label(text=motion)
+        else:
+            row.label(text="None")
+
+        # Speed
+        row = box.row(align=True)
+        row.label(text="Speed (mm/s):")
+        if obj:
+            row.prop(p, "sel_tcp_speed", text="", slider=True)
+            row.operator("object.apply_global_speed", text="", icon='PASTEDOWN')
+        else:
+            row.label(text="None")
+
+        # Wait
+        row = box.row(align=True)
+        row.label(text="Wait time (sec):")
+        if obj:
+            row.prop(p, "sel_tcp_wait", text="", slider=True)
+            row.operator("object.apply_global_wait", text="", icon='PASTEDOWN')
+        else:
+            row.label(text="None")
+
+        # IK Index (based on solution list)
+        row = box.row(align=True)
+        row.label(text="IK Index:")
+        if p.solutions:
+            row.prop(p, "solution_index_ui", text="")
+            if obj:
+                row.operator("object.apply_preview_pose", text="", icon='EXPORT')
+        else:
+            row.label(text="None")
+
+        # Target Position (always visible)
+        box.separator()
+        box.label(text="🔸 Target Position")
+
+        row = box.row(align=True)
+        row.operator("object.focus_on_target", text="Select", icon='RESTRICT_SELECT_OFF')
+        row.operator("object.snap_target_to_fk", text="Snap to FK", icon='CONSTRAINT')
+        row.operator("object.snap_goal_to_active", text="Snap to Active", icon='PIVOT_ACTIVE')
+
+        row = box.row(align=True)
+        row.operator("object.preview_goal_pose", text="Preview", icon='HIDE_OFF')
+        row.operator("object.record_goal_pose",  text="Record",  icon='REC')
+        row.operator("object.update_tcp_pose", text="Update", icon='EXPORT')
+
+        next_idx = obj.get("index", 0) + 1
+        tps = [o for o in bpy.data.collections.get("Teach data").objects if o.name.startswith("P.")]
+        tps = sorted(tps, key=lambda o: o.get("index", 9999))
+        next_point = next((tp for tp in tps if tp.get("index") == next_idx), None)
+
+        if next_point:
             row = box.row(align=True)
-            row.prop(p, "path_percent", text="Path %")
-            row.operator("object.snap_gizmo_on_path", text="Move Gizmo")
+            row.label(text=f"Path {obj.name} → {next_point.name}")
+            row.prop(p, "path_percent", text="", slider=True)
+            row.operator("object.snap_gizmo_on_path", text="", icon='RESTRICT_SELECT_OFF')
 
-    def draw_step3(self, L, ctx):
-
-        p = ctx.scene.ik_motion_props
-        obj = p.selected_teach_point
-        box = L.box()
-        row = box.row()
-        icon = 'TRIA_DOWN' if p.show_step3 else 'TRIA_RIGHT'
-        row.prop(p, "show_step3", icon=icon, text="Step 3: Bake Motion", emboss=False)
-        if not p.show_step3:
-            return
-
-        if obj:
-            box.separator()
-            box.label(text=f"Selected: {obj.name}", icon='PINNED')
-            if obj.get("motion_type") in {"LINEAR", "JOINT"}:
-                row = box.row(align=True)
-                row.label(text=f"Motion Type: {obj['motion_type']}")
-                row.operator("object.toggle_motion_type", text="", icon='FILE_REFRESH')
-
-                row = box.row(align=True)
-                row.prop(p, "sel_tcp_speed", text="Speed (mm/s)", slider=True)
-                row.operator("object.apply_global_speed", text="", icon='PASTEDOWN')
-
-                row = box.row(align=True)
-                row.prop(p, "sel_tcp_wait", text="Wait (sec)", slider=True)
-                row.operator("object.apply_global_wait", text="", icon='PASTEDOWN')
-            else:
-                box.label(text="< timing props missing – legacy point >", icon='ERROR')
-
-        row = box.row(align=True)
-        outer_split = row.split(factor=0.8, align=True)
-
-        left = outer_split.split(factor=0.5, align=True)
-        col1 = left.row(align=True)
-        col1.enabled = not p.bake_all_tcp
-        col1.prop(p, "bake_start_idx", text="Start idx")
-
-        col2 = left.row(align=True)
-        col2.enabled = not p.bake_all_tcp
-        col2.prop(p, "bake_end_idx", text="End idx")
-
-        outer_split.prop(p, "bake_all_tcp", text="All")
+        box.separator()
+        box.label(text="🔸 Bake Motion")
 
         row = box.row(align=True)
         row.prop(p, "bake_start_frame", text="Start Frame")
+        row.prop(p, "precise_linear", text="LIN se(3)", icon='CONSTRAINT', toggle=True)
 
         row = box.row(align=True)
         row.operator("object.bake_teach_sequence", text="Bake", icon='FILE_TICK')
         row.operator("object.clear_bake_keys", text="", icon='TRASH')
-        
+
         row = box.row(align=True)
-        row.scale_x = 1.1
-        row.label(text="High Precision Linear Mode")
-        row.prop(p, "precise_linear", text="", icon='CONSTRAINT', toggle=True)
+        row.operator("object.draw_teach_path", text="Draw Path", icon='TRACKING_FORWARDS')
+        row.operator("object.toggle_path_visibility", text="Show/Hide Path", icon='HIDE_OFF')
+
+        box.separator()
+        box.label(text="🔸 Pick / Place")
+
+        row = box.row(align=True)
+        row.operator("object.pick_object", text="Pick", icon='LINKED')
+        row.operator("object.place_object", text="Place", icon='UNLINKED')
+        row.operator("object.clear_dynamic_parent", text="", icon='TRASH')
 
     def draw_stage_jog_section(self, layout, ctx):
         prefs = get_addon_prefs()
@@ -398,7 +384,6 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         if not p.show_stage:
             return
     
-        from rteach.core.robot_presets import ROBOT_CONFIGS
         config = ROBOT_CONFIGS.get(p.robot_type, {})
         joints = config.get("stage_joints", [])
         if not joints:
@@ -424,7 +409,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         box = L.box()
         row = box.row()
         icon = 'TRIA_DOWN' if getattr(p, "show_io", True) else 'TRIA_RIGHT'
-        row.prop(p, "show_io", icon=icon, text="📂 Import / Export", emboss=False)
+        row.prop(p, "show_io", icon=icon, text="Import / Export", emboss=False)
 
         if not p.show_io:
             return
