@@ -2,9 +2,22 @@ import os
 import bpy
 import json
 import math
+from rteach.core.core import apply_solution
     
 class TcpItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="TCP Name")
+
+def update_ik_index_preview(self, ctx):
+    p = ctx.scene.ik_motion_props
+    arm = bpy.data.objects.get(p.armature)
+    if not p.solutions or not arm:
+        return
+
+    idx = p.solution_index_ui - 1
+    if 0 <= idx < len(p.solutions):
+        q_sel = p.solutions[idx]
+        apply_solution(arm, q_sel, ctx.scene.frame_current, insert_keyframe=False)
+        p.current_index = idx
 
 def in_collections(collection_names):
     def _poll(self, obj):
@@ -140,11 +153,10 @@ class IKMotionProperties(bpy.types.PropertyGroup):
 
     solution_index_ui: bpy.props.IntProperty(
         name="Pose Index",
-        description="Select IK solution to preview or apply",
         default=1,
         min=1,
         soft_max=8,
-        update=lambda self, ctx: setattr(self, "current_index", self.solution_index_ui - 1)
+        update=lambda self, ctx: update_ik_index_preview(self, ctx)
     )
 
     use_last_pose: bpy.props.BoolProperty(
@@ -284,10 +296,6 @@ class IKMotionProperties(bpy.types.PropertyGroup):
     show_teach:   bpy.props.BoolProperty(name="Show Teach",   default=True)
     show_linear:  bpy.props.BoolProperty(name="Show Linear",  default=True)
     show_pose:    bpy.props.BoolProperty(name="Show Pose",    default=True)
-    show_step1: bpy.props.BoolProperty(name="Show Step 1", default=True)
-    show_step2: bpy.props.BoolProperty(name="Show Step 2", default=True)
-    show_step3: bpy.props.BoolProperty(name="Show Step 3", default=True)
-    show_pick_place: bpy.props.BoolProperty(name="Show Pick/Place", default=True)
 
     target_rel_x: bpy.props.FloatProperty(name="X (mm)", default=0.0)
     target_rel_y: bpy.props.FloatProperty(name="Y (mm)", default=0.0)
@@ -297,12 +305,6 @@ class IKMotionProperties(bpy.types.PropertyGroup):
     target_rel_rz: bpy.props.FloatProperty(name="RZ (deg)", default=0.0)
 
     preview_tcp_index: bpy.props.IntProperty(default=0)
-
-    auto_record: bpy.props.BoolProperty(
-        name="Auto Record",
-        description="Record automatically when teaching",
-        default=False
-    )
 
     overwrite_selected: bpy.props.BoolProperty(
         name="Overwrite Selected",
