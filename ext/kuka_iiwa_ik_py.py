@@ -3,6 +3,13 @@ import copy
 import math
 from typing import List, NewType
 
+def safe_acos(x: float) -> float:
+    """Clamp input to valid acos range [-1, 1] to prevent math domain error."""
+    return math.acos(max(-1.0, min(1.0, x)))
+def safe_sqrt(x: float) -> float:
+    """Clamp to zero if value is negative within small tolerance."""
+    return math.sqrt(max(0.0, x))
+
 # Constants for solver
 robot_nq: int = 7
 n_tree_nodes: int = 22
@@ -974,24 +981,16 @@ def kuka_iiwa_ik_solve_raw(T_ee: np.ndarray, th_2):
         if not queue_element_validity[i]:
             continue
         ik_out_i = solution_queue[i]
-        new_ik_i = np.zeros((robot_nq, 1))
-        value_at_0 = ik_out_i[1]  # th_0
-        new_ik_i[0] = value_at_0
-        value_at_1 = ik_out_i[2]  # th_1
-        new_ik_i[1] = value_at_1
-        value_at_2 = th_2  # th_2
-        new_ik_i[2] = value_at_2
-        value_at_3 = ik_out_i[3]  # th_3
-        new_ik_i[3] = value_at_3
-        value_at_4 = ik_out_i[4]  # th_4
-        new_ik_i[4] = value_at_4
-        value_at_5 = ik_out_i[6]  # th_5
-        new_ik_i[5] = value_at_5
-        value_at_6 = ik_out_i[7]  # th_6
-        new_ik_i[6] = value_at_6
+        new_ik_i = np.zeros((robot_nq,))
+        new_ik_i[0] = ik_out_i[1]  # th_0
+        new_ik_i[1] = ik_out_i[2]  # th_1
+        new_ik_i[2] = th_2         # th_2 (from input, not queue)
+        new_ik_i[3] = ik_out_i[3]  # th_3
+        new_ik_i[4] = ik_out_i[4]  # th_4
+        new_ik_i[5] = ik_out_i[6]  # th_5
+        new_ik_i[6] = ik_out_i[7]  # th_6
         ik_out.append(new_ik_i)
     return ik_out
-
 
 def kuka_iiwa_ik_solve(T_ee: np.ndarray, th_2):
     T_ee_raw_in = kuka_iiwa_ik_target_original_to_raw(T_ee)
@@ -1022,6 +1021,9 @@ def test_ik_solve_kuka_iiwa():
         ee_pose_diff = np.max(np.abs(ee_pose_i - ee_pose))
         print('The pose difference is ', ee_pose_diff)
 
+
+def solve(T: np.ndarray, th_2: float = 0.0) -> list[np.ndarray]:
+    return kuka_iiwa_ik_solve(T, th_2)
 
 if __name__ == '__main__':
     test_ik_solve_kuka_iiwa()
