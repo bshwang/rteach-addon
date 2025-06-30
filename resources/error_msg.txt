@@ -1,9 +1,198 @@
-신규기능
-path를 로봇이 움직이면서 실시간으로 표시(전체 경로에서 움직이는 것 처럼)
-stagejog - PMbot
-로봇 전체 가동범위 표시(체크박스로)
-
-버그fix
-
-개선
-- recompute 기능?
+raw_text = """
+Pro_Z	CSB Loader	Left　	1	0	40	37
+Pro_Z	CSB Loader	Left　	2	180	40	37
+Pro_Z	CSB Loader	Left　	3	360	40	37
+Pro_Z	CSB Loader	Left　	4	540	40	37
+Pro_Z	CSB Loader_50	Left　	1	-50	40	37
+Pro_Z	CSB Loader_50	Left　	2	130	40	37
+Pro_Z	CSB Loader_50	Left　	3	260	40	37
+Pro_Z	CSB Loader_50	Left　	4	490	40	37
+Pro_Z	CSB Loader_110	Left　	1	-110	40	37
+Pro_Z	CSB Loader_110	Left　	2	70	40	37
+Pro_Z	CSB Loader_110	Left　	3	250	40	37
+Pro_Z	CSB Loader_110	Left　	4	430	40	37
+Pro_Z	CSB CRA	Left　	1	0	40	12
+Pro_Z	CSB CRA	Left　	2	180	40	12
+Pro_Z	CSB CRA	Left　	3	360	40	12
+Pro_Z	CSB CRA	Left　	4	540	40	12
+Pro_Z	CSB CRA	Left　	5	750	40	12
+Pro_Z	CSB CRA	Left　	6	570	40	12
+Pro_Z	CSB CRA	Left　	7	390	40	12
+Pro_Z	CSB CRA	Left　	8	210	40	12
+Pro_Z	CSB CRA_50	Left　	1	-50	40	12
+Pro_Z	CSB CRA_50	Left　	2	130	40	12
+Pro_Z	CSB CRA_50	Left　	3	260	40	12
+Pro_Z	CSB CRA_50	Left　	4	490	40	12
+Pro_Z	CSB CRA_50	Left　	5	750	40	12
+Pro_Z	CSB CRA_50	Left　	6	570	40	12
+Pro_Z	CSB CRA_50	Left　	7	390	40	12
+Pro_Z	CSB CRA_50	Left　	8	210	40	12
+Pro_Z	CSB CRA_110	Left　	1	-110	40	12
+Pro_Z	CSB CRA_110	Left　	2	70	40	12
+Pro_Z	CSB CRA_110	Left　	3	250	40	12
+Pro_Z	CSB CRA_110	Left　	4	430	40	12
+Pro_Z	CSB CRA_110	Left　	5	750	40	12
+Pro_Z	CSB CRA_110	Left　	6	570	40	12
+Pro_Z	CSB CRA_110	Left　	7	390	40	12
+Pro_Z	CSB CRA_110	Left　	8	210	40	12
+Pro_Z	MIB Front	Left　	1	0	420	12
+Pro_Z	MIB Front	Left　	2	180	420	12
+Pro_Z	MIB Front	Left　	3	360	420	12
+Pro_Z	MIB Front	Left　	4	540	420	12
+Pro_Z	MIB Front	Left　	5	0	860	12
+Pro_Z	MIB Front	Left　	6	180	860	12
+Pro_Z	MIB Front	Left　	7	360	860	12
+Pro_Z	MIB Front	Left　	8	540	860	12
+Pro_Z	MIB Front_100	Left　	1	-100	420	12
+Pro_Z	MIB Front_100	Left　	2	80	420	12
+Pro_Z	MIB Front_100	Left　	3	260	420	12
+Pro_Z	MIB Front_100	Left　	4	440	420	12
+Pro_Z	MIB Front_100	Left　	5	-100	860	12
+Pro_Z	MIB Front_100	Left　	6	80	860	12
+Pro_Z	MIB Front_100	Left　	7	260	860	12
+Pro_Z	MIB Front_100	Left　	8	440	860	12
+Pro_Z	MIB Rear	Left　	1	0	420	12
+Pro_Z	MIB Rear	Left　	2	180	420	12
+Pro_Z	MIB Rear	Left　	3	360	420	12
+Pro_Z	MIB Rear	Left　	4	540	420	12
+Pro_Z	MIB Rear	Left　	5	750	420	12
+Pro_Z	MIB Rear	Left　	6	570	420	12
+Pro_Z	MIB Rear	Left　	7	390	420	12
+Pro_Z	MIB Rear	Left　	8	210	420	12
+Pro_Z	MIB Rear	Left　	9	0	860	12
+Pro_Z	MIB Rear	Left　	10	180	860	12
+Pro_Z	MIB Rear	Left　	11	360	860	12
+Pro_Z	MIB Rear	Left　	12	540	860	12
+Pro_Z	MIB Rear	Left　	13	750	860	12
+Pro_Z	MIB Rear	Left　	14	570	860	12
+Pro_Z	MIB Rear	Left　	15	390	860	12
+Pro_Z	MIB Rear	Left　	16	210	860	12
+Pro_Z	MIB Rear_100	Left　	1	-100	420	12
+Pro_Z	MIB Rear_100	Left　	2	80	420	12
+Pro_Z	MIB Rear_100	Left　	3	260	420	12
+Pro_Z	MIB Rear_100	Left　	4	440	420	12
+Pro_Z	MIB Rear_100	Left　	5	750	420	12
+Pro_Z	MIB Rear_100	Left　	6	570	420	12
+Pro_Z	MIB Rear_100	Left　	7	390	420	12
+Pro_Z	MIB Rear_100	Left　	8	210	420	12
+Pro_Z	MIB Rear_100	Left　	9	-100	860	12
+Pro_Z	MIB Rear_100	Left　	10	80	860	12
+Pro_Z	MIB Rear_100	Left　	11	260	860	12
+Pro_Z	MIB Rear_100	Left　	12	440	860	12
+Pro_Z	MIB Rear_100	Left　	13	750	860	12
+Pro_Z	MIB Rear_100	Left　	14	570	860	12
+Pro_Z	MIB Rear_100	Left　	15	390	860	12
+Pro_Z	MIB Rear_100	Left　	16	210	860	12
+Pro_Z	MPB	Left　	1	0	420	12
+Pro_Z	MPB	Left　	2	180	420	12
+Pro_Z	MPB	Left　	3	360	420	12
+Pro_Z	MPB	Left　	4	540	420	12
+Pro_Z	MPB	Left　	5	750	420	12
+Pro_Z	MPB	Left　	6	570	420	12
+Pro_Z	MPB	Left　	7	390	420	12
+Pro_Z	MPB	Left　	8	210	420	12
+Pro_Z	MPB	Left　	9	0	860	12
+Pro_Z	MPB	Left　	10	180	860	12
+Pro_Z	MPB	Left　	11	360	860	12
+Pro_Z	MPB	Left　	12	540	860	12
+Pro_Z	MPB	Left　	13	750	860	12
+Pro_Z	MPB	Left　	14	570	860	12
+Pro_Z	MPB	Left　	15	390	860	12
+Pro_Z	MPB	Left　	16	210	860	12
+Pro_Z	MPB_100	Left　	1	-100	420	12
+Pro_Z	MPB_100	Left　	2	80	420	12
+Pro_Z	MPB_100	Left　	3	260	420	12
+Pro_Z	MPB_100	Left　	4	440	420	12
+Pro_Z	MPB_100	Left　	5	750	420	12
+Pro_Z	MPB_100	Left　	6	570	420	12
+Pro_Z	MPB_100	Left　	7	390	420	12
+Pro_Z	MPB_100	Left　	8	210	420	12
+Pro_Z	MPB_100	Left　	9	-100	860	12
+Pro_Z	MPB_100	Left　	10	80	860	12
+Pro_Z	MPB_100	Left　	11	260	860	12
+Pro_Z	MPB_100	Left　	12	440	860	12
+Pro_Z	MPB_100	Left　	13	750	860	12
+Pro_Z	MPB_100	Left　	14	570	860	12
+Pro_Z	MPB_100	Left　	15	390	860	12
+Pro_Z	MPB_100	Left　	16	210	860	12
+Pro_Z	MPB_50	Left　	1	-50	420	12
+Pro_Z	MPB_50	Left　	2	130	420	12
+Pro_Z	MPB_50	Left　	3	260	420	12
+Pro_Z	MPB_50	Left　	4	490	420	12
+Pro_Z	MPB_50	Left　	5	750	420	12
+Pro_Z	MPB_50	Left　	6	570	420	12
+Pro_Z	MPB_50	Left　	7	390	420	12
+Pro_Z	MPB_50	Left　	8	210	420	12
+Pro_Z	MPB_50	Left　	9	-50	860	12
+Pro_Z	MPB_50	Left　	10	130	860	12
+Pro_Z	MPB_50	Left　	11	260	860	12
+Pro_Z	MPB_50	Left　	12	490	860	12
+Pro_Z	MPB_50	Left　	13	750	860	12
+Pro_Z	MPB_50	Left　	14	570	860	12
+Pro_Z	MPB_50	Left　	15	390	860	12
+Pro_Z	MPB_50	Left　	16	210	860	12
+Pro_Z	CSB Loader	Right	1	750	40	37
+Pro_Z	CSB Loader	Right	2	570	40	37
+Pro_Z	CSB Loader	Right	3	390	40	37
+Pro_Z	CSB Loader	Right	4	210	40	37
+Pro_Z	CSB CRA	Right	1	750	40	12
+Pro_Z	CSB CRA	Right	2	570	40	12
+Pro_Z	CSB CRA	Right	3	390	40	12
+Pro_Z	CSB CRA	Right	4	210	40	12
+Pro_Z	CSB CRA	Right	5	0	40	12
+Pro_Z	CSB CRA	Right	6	180	40	12
+Pro_Z	CSB CRA	Right	7	360	40	12
+Pro_Z	CSB CRA	Right	8	540	40	12
+Pro_Z	CSB CRA_160	Right	1	910	40	12
+Pro_Z	CSB CRA_160	Right	2	730	40	12
+Pro_Z	CSB CRA_160	Right	3	550	40	12
+Pro_Z	CSB CRA_160	Right	4	370	40	12
+Pro_Z	CSB CRA_160	Right	5	0	40	12
+Pro_Z	CSB CRA_160	Right	6	180	40	12
+Pro_Z	CSB CRA_160	Right	7	360	40	12
+Pro_Z	CSB CRA_160	Right	8	540	40	12
+Pro_Z	MIB Front	Right	1	750	420	12
+Pro_Z	MIB Front	Right	2	570	420	12
+Pro_Z	MIB Front	Right	3	390	420	12
+Pro_Z	MIB Front	Right	4	210	420	12
+Pro_Z	MIB Front	Right	5	750	860	12
+Pro_Z	MIB Front	Right	6	570	860	12
+Pro_Z	MIB Front	Right	7	390	860	12
+Pro_Z	MIB Front	Right	8	210	860	12
+Pro_Z	MIB Rear	Right	1	750	420	12
+Pro_Z	MIB Rear	Right	2	570	420	12
+Pro_Z	MIB Rear	Right	3	390	420	12
+Pro_Z	MIB Rear	Right	4	210	420	12
+Pro_Z	MIB Rear	Right	5	0	420	12
+Pro_Z	MIB Rear	Right	6	180	420	12
+Pro_Z	MIB Rear	Right	7	360	420	12
+Pro_Z	MIB Rear	Right	8	540	420	12
+Pro_Z	MIB Rear	Right	9	750	860	12
+Pro_Z	MIB Rear	Right	10	570	860	12
+Pro_Z	MIB Rear	Right	11	390	860	12
+Pro_Z	MIB Rear	Right	12	210	860	12
+Pro_Z	MIB Rear	Right	13	0	860	12
+Pro_Z	MIB Rear	Right	14	180	860	12
+Pro_Z	MIB Rear	Right	15	360	860	12
+Pro_Z	MIB Rear	Right	16	540	860	12
+Pro_Z	MPB	Right	1	750	420	12
+Pro_Z	MPB	Right	2	570	420	12
+Pro_Z	MPB	Right	3	390	420	12
+Pro_Z	MPB	Right	4	210	420	12
+Pro_Z	MPB	Right	5	0	420	12
+Pro_Z	MPB	Right	6	180	420	12
+Pro_Z	MPB	Right	7	360	420	12
+Pro_Z	MPB	Right	8	540	420	12
+Pro_Z	MPB	Right	9	750	860	12
+Pro_Z	MPB	Right	10	570	860	12
+Pro_Z	MPB	Right	11	390	860	12
+Pro_Z	MPB	Right	12	210	860	12
+Pro_Z	MPB	Right	13	0	860	12
+Pro_Z	MPB	Right	14	180	860	12
+Pro_Z	MPB	Right	15	360	860	12
+Pro_Z	MPB	Right	16	540	860	12
+Pro_Z	SPIN Cart	Left	1	50	312	37
+Pro_Z	SPIN Cart	Left	2	230	312	37
+Pro_Z	SPIN Cart	Left	3	410	312	37
+Pro_Z	SPIN Cart	Left	4	590	312	37
+"""  
