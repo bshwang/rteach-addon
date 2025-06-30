@@ -6,8 +6,13 @@ Precise Cartesian linear motion planner for KUKA iiwa
 import random
 import numpy as np
 from scipy.linalg import logm, expm, norm
-import rteach.ext.kuka_iiwa_ik as kuka_iiwa_ik
-import rteach.ext.kuka_iiwa_ik_generated as kk  
+try:
+    import rteach.ext.kuka_iiwa_ik as kuka_iiwa_ik
+except ImportError:
+    import rteach.ext.kuka_iiwa_ik_py as kuka_iiwa_ik
+
+import rteach.ext.kuka_iiwa_ik_py as kk
+
 
 def _interpolate_se3(T0, T1, t: float) -> np.ndarray:
     """Lie-group interpolation between two 4×4 SE3 matrices"""
