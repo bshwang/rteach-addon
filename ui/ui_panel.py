@@ -4,7 +4,8 @@ import bpy
 from bpy.utils import previews
 from rteach.core.core import get_BONES, get_joint_limits
 from rteach.core.robot_presets import ROBOT_CONFIGS
-from rteach.core.robot_state import get_armature_type
+import rteach.core.core_ur as core_ur
+import rteach.core.core_iiwa as core_iiwa
 
 preview_collections = {}
 
@@ -172,9 +173,18 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row = box.row(align=True)
         row.prop(p, "tcp_object", text="TCP")
         row.operator("object.setup_tcp_from_gizmo", text="", icon='EMPTY_ARROWS')
+
         icon = 'CHECKBOX_HLT' if p.show_workspace else 'CHECKBOX_DEHLT'
         row = box.row()
         row.prop(p, "show_workspace", text="Show Workspace", toggle=True, icon=icon)
+
+        solver_type = ""
+        if "ur" in p.robot_type.lower():
+            solver_type = core_ur.UR_SOLVER_TYPE
+            box.label(text=f"UR Solver: {solver_type}", icon='INFO')
+        elif "iiwa" in p.robot_type.lower() or "kuka" in p.robot_type.lower():
+            solver_type = core_iiwa.KUKA_SOLVER_TYPE
+            box.label(text=f"KUKA Solver: {solver_type}", icon='INFO')
 
         if config.get("armature_sets"):
             row = box.row(align=True)
@@ -327,8 +337,8 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
 
         row = box.row(align=True)
         row.operator("object.focus_on_target", text="Select", icon='RESTRICT_SELECT_OFF')
-        row.operator("object.snap_target_to_fk", text="Snap to FK", icon='CONSTRAINT')
-        row.operator("object.snap_goal_to_active", text="Snap to Active", icon='PIVOT_ACTIVE')
+        row.operator("object.snap_target_to_fk", text="to FK", icon='PIVOT_ACTIVE')
+        row.operator("object.snap_goal_to_active", text="to Active", icon='PIVOT_ACTIVE')
 
         row = box.row(align=True)
         row.operator("object.preview_goal_pose", text="Preview", icon='HIDE_OFF')
