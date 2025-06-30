@@ -1,6 +1,16 @@
 import numpy as np
-from rteach.ext.ur_analytic_ik_ext import ur16e, ur5e, ur3e, ur10e, ur15, ur20, ur30
 from rteach.core.robot_presets import ROBOT_CONFIGS
+
+UR_SOLVER_TYPE = "PYD"
+
+try:
+    from rteach.ext.ur_analytic_ik_ext import ur16e, ur5e, ur3e, ur10e, ur15, ur20, ur30
+    print("[core_ur] Using .pyd analytic IK module")
+    UR_SOLVER_TYPE = "PYD"
+except ImportError:
+    from rteach.ext.ur_analytic_ik_py import ur16e, ur5e, ur3e, ur10e, ur15, ur20, ur30
+    print("[core_ur] Using pure Python fallback IK solver")
+    UR_SOLVER_TYPE = "PY"
 
 def _get_solver(robot_type: str, armature_name: str):
     config = ROBOT_CONFIGS.get(robot_type.lower(), {})
