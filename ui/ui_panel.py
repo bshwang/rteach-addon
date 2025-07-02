@@ -180,10 +180,19 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
 
         solver_type = ""
         if "ur" in p.robot_type.lower():
-            solver_type = core_ur.UR_SOLVER_TYPE
+            try:
+                prefs = bpy.context.preferences.addons["rteach"].preferences
+                solver_type = prefs.ur_solver_choice
+            except:
+                solver_type = "?"
             box.label(text=f"UR Solver: {solver_type}", icon='INFO')
+
         elif "iiwa" in p.robot_type.lower() or "kuka" in p.robot_type.lower():
-            solver_type = core_iiwa.KUKA_SOLVER_TYPE
+            try:
+                prefs = bpy.context.preferences.addons["rteach"].preferences
+                solver_type = prefs.kuka_solver_choice
+            except:
+                solver_type = "?"
             box.label(text=f"KUKA Solver: {solver_type}", icon='INFO')
 
         if config.get("armature_sets"):
