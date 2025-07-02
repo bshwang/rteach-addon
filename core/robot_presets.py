@@ -78,12 +78,17 @@ ROBOT_CONFIGS = {
             (-170, 170), (-120, 120), (-175, 175)
         ],
         "stage_joints": [
-            ("joint_ev", "EV", "mm", -500, 200, "z", "location"),
-            ("joint_x", "Stage_X", "mm", 0, 450, "x", "location"),
-            ("joint_y", "Stage_Y", "mm", -250, 250, "y", "location"),
-            ("joint_z", "Stage_Z", "mm", -250, 450, "z", "location"),
-            ("joint_rot", "Holder_Rot", "deg", 0, 135, "z", "rotation"),
-            ("joint_tilt", "Holder_Tilt", "deg", 0, 35, "x", "rotation"),
+            ("joint_ev", "EV", "mm", 0, 680, "z", "location"),
+            ("joint_x", "Stage_X", "mm", 0, 400, "x", "location"),
+            ("joint_y", "Stage_Y", "mm", -500, 0, "y", "location"),
+            ("joint_z", "Stage_Z", "mm", 0, 680, "z", "location"),
+            ("joint_rot", "Holder_Rot", "deg", -90, 90, "z", "rotation"),
+            ("joint_tilt", "Holder_Tilt", "deg", 0, 60, "x", "rotation"),
+            ("joint_btfinger", "TCG_BTF", "mm", 0, 45, "y", "location"),
+            ("joint_socket", "TCG_Socket", "deg", -900, 900, "z", "rotation"),
+            ("joint_ncfinger", "NCG_NCF", "deg", -900, 900, "z", "rotation"),
+            ("joint_hin", "H_in", "mm", 0, 10, "x", "location"),
+            ("joint_hout", "H_out", "mm", 0, 10, "x", "location"),
         ],
         "setup_objects": {
             "goal": "Target_Gizmo",
