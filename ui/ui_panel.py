@@ -154,15 +154,14 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         box.label(text="Custom Systems")
         draw_robot_slide_section(box, custom_keys, "robot_slide_custom_idx")
 
-    def draw_setup_section(self, L, ctx):
-        p = ctx.scene.ik_motion_props
+    def draw_setup_section(self, layout, context):
+        p = context.scene.ik_motion_props
         config = ROBOT_CONFIGS.get(p.robot_type.lower(), {})
-        box = L.box()
+        box = layout.box()
 
         row = box.row()
         icon = 'TRIA_DOWN' if p.show_setup else 'TRIA_RIGHT'
         row.prop(p, "show_setup", icon=icon, text="Setup", emboss=False)
-
         if not p.show_setup:
             return
 
@@ -178,22 +177,26 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row = box.row()
         row.prop(p, "show_workspace", text="Show Workspace", toggle=True, icon=icon)
 
-        solver_type = ""
-        if "ur" in p.robot_type.lower():
-            try:
-                prefs = bpy.context.preferences.addons["rteach"].preferences
-                solver_type = prefs.ur_solver_choice
-            except:
-                solver_type = "?"
-            box.label(text=f"UR Solver: {solver_type}", icon='INFO')
-
-        elif "iiwa" in p.robot_type.lower() or "kuka" in p.robot_type.lower():
-            try:
-                prefs = bpy.context.preferences.addons["rteach"].preferences
-                solver_type = prefs.kuka_solver_choice
-            except:
-                solver_type = "?"
-            box.label(text=f"KUKA Solver: {solver_type}", icon='INFO')
+        # Solver status (auto-fallback aware)
+        prefs = bpy.context.preferences.addons['rteach'].preferences
+        solver_str = ""
+        rt = p.robot_type.lower()
+        if "ur" in rt:
+            mode = prefs.ur_solver_choice
+            if mode == 'PY':
+                active = 'PY'
+            else:
+                active = 'PYD' if core_ur._HAS_PYD else 'PY'
+            solver_str = f"UR Solver: {active}"
+        elif "iiwa" in rt or "kuka" in rt:
+            mode = prefs.kuka_solver_choice
+            if mode == 'PY':
+                active = 'PY'
+            else:
+                active = 'PYD' if core_iiwa._HAS_PYD else 'PY'
+            solver_str = f"KUKA Solver: {active}"
+        if solver_str:
+            box.label(text=solver_str, icon='INFO')
 
         if config.get("armature_sets"):
             row = box.row(align=True)
