@@ -3,9 +3,12 @@ import bpy
 import json
 import math
 from rteach.core.core import apply_solution
-    
+
 class TcpItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="TCP Name")
+
+def _on_robot_type_changed(self, context):
+    rebuild_jog_sliders(self.robot_type)      
 
 def update_ik_index_preview(self, ctx):
     p = ctx.scene.ik_motion_props
@@ -40,6 +43,7 @@ def delayed_workspace_update():
     return None
 
 class IKMotionProperties(bpy.types.PropertyGroup):
+
     tcp_sorted_list: bpy.props.CollectionProperty(type=TcpItem)
     tcp_list_index: bpy.props.IntProperty(name="Selected TCP Index", default=0)
 
