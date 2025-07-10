@@ -11,13 +11,14 @@ ROBOT_CONFIGS = {
             (-170, 170), (-120, 120), (-175, 175)
         ],
         "stage_joints": [
-            ("joint_ev_z", "EV_Z", "mm", 250, 1050, "z", "location"),
-            ("joint_ev_y", "EV_Y", "mm", -200, 200, "y", "location"),
+            ("joint_ev_z", "EV_Z", "mm", 0, 680, "z", "location"),
+            ("joint_ev_y", "EV_Y", "mm", -400, 0, "y", "location"),
             ("joint_stage_x", "Stage_X", "mm", 0, 400, "x", "location"),
-            ("joint_stage_y", "Stage_Y", "mm", -200, 200, "y", "location"),
-            ("joint_stage_z", "Stage_Z", "mm", 0, 800, "z", "location"),
-            ("joint_holder_rot", "Holder_Rot", "deg", 0, 135, "z", "rotation"),
-            ("joint_holder_tilt", "Holder_Tilt", "deg", 0, 35, "x", "rotation"),
+            ("joint_stage_y", "Stage_Y", "mm", -400, 0, "y", "location"),
+            ("joint_stage_z", "Stage_Z", "mm", 0, 680, "z", "location"),
+            ("joint_holder_rot", "Holder_Rot", "deg", -90, 90, "z", "rotation"),
+            ("joint_holder_tilt", "Holder_Tilt", "deg", 0, 60, "x", "rotation"),
+            ("joint_tb_low", "Toolbox", "mm", 0, 280, "z", "location"),
         ],
         "setup_objects": {
             "goal": "Target_Gizmo",
