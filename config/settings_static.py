@@ -136,6 +136,7 @@ for cfg in ROBOT_CONFIGS.values():
 # ──────────────────────────────────────────────────────────────
 # Helper: (re)register properties for selected robot
 # ──────────────────────────────────────────────────────────────
+
 def register_static_properties(robot_type: str = ""):
     """
     Rebuild JogProperties sliders to match the DOF & limits of `robot_type`.
