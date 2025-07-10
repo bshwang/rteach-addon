@@ -181,20 +181,22 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         prefs = bpy.context.preferences.addons['rteach'].preferences
         solver_str = ""
         rt = p.robot_type.lower()
+
         if "ur" in rt:
             mode = prefs.ur_solver_choice
             if mode == 'PY':
                 active = 'PY'
             else:
-                active = 'PYD' if core_ur._HAS_PYD else 'PY'
+                active = core_ur.UR_SOLVER_TYPE
             solver_str = f"UR Solver: {active}"
         elif "iiwa" in rt or "kuka" in rt:
             mode = prefs.kuka_solver_choice
             if mode == 'PY':
                 active = 'PY'
             else:
-                active = 'PYD' if core_iiwa._HAS_PYD else 'PY'
+                active = core_iiwa.KUKA_SOLVER_TYPE
             solver_str = f"KUKA Solver: {active}"
+
         if solver_str:
             box.label(text=solver_str, icon='INFO')
 
@@ -342,6 +344,13 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
                 row.operator("object.apply_preview_pose", text="", icon='EXPORT')
         else:
             row.label(text="None")
+            
+        if "iiwa" in p.armature.lower():
+            row = box.row(align=True)
+            row.label(text="R angle (q3)")
+            sub = row.row()
+            sub.scale_x = 1.2
+            sub.prop(p, "fixed_q3_deg", text="", slider=True)
 
         # Target Position (always visible)
         box.separator()
