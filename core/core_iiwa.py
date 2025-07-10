@@ -25,7 +25,7 @@ except Exception as e:
     KUKA_SOLVER_TYPE = "PY"
 
 try:
-    from rteach.ext.kuka_iiwa_ik_generated import kuka_iiwa_fk as fk_py
+    from rteach.ext.kuka_iiwa_ik_py import kuka_iiwa_fk as fk_py
 except Exception as e:
     print(f"[core_iiwa] Failed to load FK module: {e}")
     fk_py = None
