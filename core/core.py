@@ -165,7 +165,8 @@ def solve_and_apply(ctx, p, T_goal, frame, insert_keyframe=True):
     
     print(f"[IK] Solutions found: {len(sols)}")
     for i, q in enumerate(sols):
-        print(f"  ▷ sol[{i}] = {[round(a, 3) for a in q]}")
+        q_deg = [round(math.degrees(a), 2) for a in q]
+        print(f"  ▷ sol[{i}] = {q_deg}")
 
     if not sols:
         print("IK failed")
@@ -217,9 +218,14 @@ def get_best_ik_solution(p, T_goal, q_ref=None):
     T_offset = compute_tcp_offset_matrix(p)
     T_flange = np.linalg.inv(T_base) @ T_goal @ np.linalg.inv(T_offset)
 
+    print("[IK] Solving IK for T_goal:")
+    for row in T_goal:
+        print("  ", [round(v, 4) for v in row])
+
     ik_solver = get_inverse_kinematics(p)
     sols = ik_solver(T_flange)
     if not sols:
+        print("[IK] No IK solution found.")
         return None, []
 
     joint_limits = get_joint_limits()
@@ -227,8 +233,14 @@ def get_best_ik_solution(p, T_goal, q_ref=None):
     ul = np.radians([lim[1] for lim in joint_limits])
 
     sols = [q for q in sols if np.all(q >= ll) and np.all(q <= ul)]
-    
+
+    print(f"[IK] Valid IK solutions: {len(sols)}")
+    for i, q in enumerate(sols):
+        q_deg = [round(math.degrees(a), 2) for a in q]
+        print(f"  sol[{i}] = {q_deg}")
+
     if not sols:
+        print("[IK] All solutions out of joint limits.")
         return None, []
 
     def ang_diff(a, b):
@@ -242,6 +254,7 @@ def get_best_ik_solution(p, T_goal, q_ref=None):
                 for j in range(min(len(sols[i]), len(q_ref)))
             )
         )
+        print(f"[IK] q_ref-based match: best = {best}")
     elif get_armature_type(p.robot_type) == "UR":
         ss = -1 if p.shoulder == 'L' else 1
         es = -1 if p.elbow == 'U' else 1
@@ -252,10 +265,16 @@ def get_best_ik_solution(p, T_goal, q_ref=None):
                     (math.copysign(1, q[2]) == es) +
                     (math.copysign(1, q[4]) == ws))
         best = max(range(len(sols)), key=lambda i: score(sols[i]))
+        print(f"[IK] Shoulder/Elbow/Wrist preference match: best = {best}")
     else:
         best = 0
+        print(f"[IK] Defaulting to first solution: best = {best}")
 
-    return sols[best], sols
+    q_best = sols[best]
+    q_best_deg = [round(math.degrees(a), 2) for a in q_best]
+    print(f"[IK] Selected solution: {q_best_deg}")
+
+    return q_best, sols
 
 def get_tcp_object():
     p = bpy.context.scene.ik_motion_props
