@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Robot Simulator for Blender",
     "author": "Beomsoo Hwang",
-    "version": (1, 1, 0),
+    "version": (1, 2, 1),
     "blender": (4, 3, 0),
     "location": "View3D > Sidebar > IK Solver",
     "description": "Robot motion simulation add-on",
