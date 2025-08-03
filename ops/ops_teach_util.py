@@ -295,7 +295,6 @@ class OBJECT_OT_snap_goal_to_active(bpy.types.Operator):
             return {'CANCELLED'}
 
         goal.matrix_world = active.matrix_world.copy()
-        goal.scale = (1, 1, 1)  
         goal.select_set(True)
 
         p.status_text = f"Snapped target to {active.name}"
@@ -346,12 +345,19 @@ def update_tcp_sorted_list():
         from rteach.core.core import get_best_ik_solution
         import numpy as np
 
-        T_goal = np.array(obj.matrix_world)
-        q_sel, sols = get_best_ik_solution(p, T_goal)
-        p.solutions = [list(map(float, s)) for s in sols]
-        p.max_solutions = len(sols)
-        p.current_index = obj.get("solution_index", 0)
-        p.solution_index_ui = p.current_index + 1
+        if "joint_pose" in obj:
+            q_saved = np.asarray(obj["joint_pose"], float)
+            p.solutions = [q_saved]
+            p.max_solutions = 1
+            p.current_index = obj.get("solution_index", 0)
+            p.solution_index_ui = p.current_index + 1
+        else:
+            T_goal = np.array(obj.matrix_world)
+            q_sel, sols = get_best_ik_solution(p, T_goal)
+            p.solutions = [list(map(float, s)) for s in sols]
+            p.max_solutions = len(sols)
+            p.current_index = obj.get("solution_index", 0)
+            p.solution_index_ui = p.current_index + 1
     else:
         p.selected_teach_point = None
 
@@ -465,19 +471,19 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
                 if idx >= len(p.show_plot_joints) or not p.show_plot_joints[idx]:
                     continue
 
-                name = sj[0] if len(sj) > 0 else f"stage_{i}"
-                joint_type = sj[6] if len(sj) > 6 else "location"
+                name = sj[0]
+                axis = sj[5]
+                joint_type = sj[6]
                 ob = bpy.data.objects.get(name)
                 if not ob:
                     row.append(0)
                     continue
 
+                axis_idx = {"x": 0, "y": 1, "z": 2}[axis.lower()]
                 val = (
-                    ob.location[0]
+                    ob.location[axis_idx]
                     if joint_type == "location"
-                    else ob.rotation_euler.to_quaternion().angle
-                    if ob.rotation_mode == 'QUATERNION'
-                    else ob.rotation_euler[0]
+                    else ob.rotation_euler[axis_idx]
                 )
                 row.append(round(val, 4))
 
