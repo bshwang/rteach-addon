@@ -317,6 +317,9 @@ class OBJECT_OT_snap_target_to_fk(bpy.types.Operator):
     bl_label = "Snap Target to FK"
 
     def execute(self, ctx):
+        import math
+        from mathutils import Matrix, Euler
+
         p = ctx.scene.ik_motion_props
         arm = bpy.data.objects.get(p.armature)
         goal = p.goal_object
@@ -328,21 +331,35 @@ class OBJECT_OT_snap_target_to_fk(bpy.types.Operator):
         axes = get_AXES()
         q = []
 
+        print("[DEBUG] Snap to FK initiated")
+        print("[DEBUG] Armature:", p.armature)
         for i, bn in enumerate(bones):
             pb = arm.pose.bones.get(bn)
             if not pb:
+                print(f"[WARN] Bone not found: {bn}")
                 q.append(0.0)
                 continue
             axis = axes[i]
             angle = getattr(pb.rotation_euler, axis)
             q.append(angle)
+            print(f"[DEBUG] Bone {bn}: {axis} = {math.degrees(angle):.2f}°")
 
         fk_func = get_forward_kinematics()
         T = fk_func(q)
 
+        print("[DEBUG] FK result matrix:")
+        for row in T:
+            print("   ", [round(v, 4) for v in row])
+
         T_full = compute_base_matrix(p) @ T @ compute_tcp_offset_matrix(p)
         goal.matrix_world = Matrix(T_full)
-        goal.scale = (1, 1, 1)
+
+        pos = T_full[:3, 3] * 1000
+        rot_euler = Matrix(T_full[:3, :3]).to_euler('XYZ')
+        rot_deg = [math.degrees(a) for a in rot_euler]
+
+        print(f"[DEBUG] Target snapped to FK position (mm): {pos.round(2)}")
+        print(f"[DEBUG] FK orientation (deg): Rx={rot_deg[0]:.2f}°, Ry={rot_deg[1]:.2f}°, Rz={rot_deg[2]:.2f}°")
 
         p.status_text = "Target snapped to FK"
         return {'FINISHED'}
