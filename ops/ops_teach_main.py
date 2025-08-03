@@ -8,7 +8,7 @@ from rteach.core.robot_state import get_armature_type
 from rteach.core.core import (
     apply_solution, get_inverse_kinematics, compute_base_matrix, 
     compute_tcp_offset_matrix, get_forward_kinematics, 
-    get_BONES, get_AXES, get_best_ik_solution
+    get_BONES, get_AXES, get_best_ik_solution, get_joint_limits
 )
 from rteach.core.core_iiwa import linear_move
 from rteach.ops.ops_teach_util import update_tcp_sorted_list
@@ -25,36 +25,78 @@ class OBJECT_OT_teach_pose(bpy.types.Operator):
         tgt = p.goal_object
         print("[DEBUG] Goal object:", tgt)
         print("[DEBUG] Armature:", p.armature)
+        print(f"[DEBUG] UI fixed_q3 (rad): {round(p.fixed_q3, 6)} ({round(math.degrees(p.fixed_q3), 2)}°)")
 
         q = tgt.matrix_world.to_quaternion()
         T_goal = np.eye(4)
         T_goal[:3, :3] = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
         T_goal[:3, 3] = np.array(tgt.matrix_world.to_translation())
 
+        print("[DEBUG] T_goal matrix:")
+        for row in T_goal:
+            print("  ", [round(v, 4) for v in row])
+        print("[DEBUG] T_goal position:", [round(v, 4) for v in tgt.location])
+        print("[DEBUG] T_goal rotation (deg):", [round(math.degrees(a), 2) for a in tgt.rotation_euler])
+
         ik_solver = get_inverse_kinematics(p)
         T_base = compute_base_matrix(p)
         T_offset = compute_tcp_offset_matrix(p)
         T_flange = np.linalg.inv(T_base) @ T_goal @ np.linalg.inv(T_offset)
+
+        print("[DEBUG] T_flange matrix (IK input):")
+        for row in T_flange:
+            print("  ", [round(v, 4) for v in row])
+
         sols = ik_solver(T_flange)
 
-        print(f"[DEBUG] Direct IK returned {len(sols)} solutions:")
-        for i, s in enumerate(sols):
-            print(f"  sol[{i}] = {[round(a, 3) for a in s]}")
+        print(f"[DEBUG] Raw IK solutions: {len(sols)}")
 
-        if not sols:
-            p.status_text = "IK failed: no solutions found"
+        joint_limits = get_joint_limits()
+        ll = np.radians([lim[0] for lim in joint_limits])
+        ul = np.radians([lim[1] for lim in joint_limits])
+        print("[DEBUG] Joint limits (deg):")
+        for i, (a, b) in enumerate(joint_limits):
+            print(f"  j{i+1}: {a}° ~ {b}°")
+
+        valid_sols = []
+        for i, q in enumerate(sols):
+            out_of_bounds = [(j+1, math.degrees(q[j])) for j in range(len(q)) if q[j] < ll[j] or q[j] > ul[j]]
+            if not out_of_bounds:
+                valid_sols.append(q)
+            else:
+                print(f"[WARN] sol[{i}] exceeds limits: {[f'j{j}={round(val,1)}°' for j, val in out_of_bounds]}")
+
+        print(f"[DEBUG] Valid IK solutions after joint-limit filtering: {len(valid_sols)}")
+
+        if not valid_sols:
+            print("[RESULT] No valid IK solutions found.")
+            p.status_text = "IK failed: no valid solutions"
             return {'FINISHED'}
 
+        # 기존 가장 가까운 해 선택 로직 유지
         q_prev = p.solutions[p.current_index] if p.solutions and len(p.solutions) > p.current_index else None
+        if not q_prev:
+            arm = bpy.data.objects.get(p.armature)
+            if arm:
+                q_prev = []
+                bones = get_BONES()
+                axes = get_AXES()
+                for i, bn in enumerate(bones):
+                    pb = arm.pose.bones.get(bn)
+                    if pb:
+                        q_prev.append(getattr(pb.rotation_euler, axes[i]))
+
         if q_prev:
             def ang_diff(a, b):
                 return ((a - b + math.pi) % (2 * math.pi)) - math.pi
-            idx = min(range(len(sols)),key=lambda i: sum(abs(ang_diff(sols[i][j], q_prev[j])) for j in range(min(len(sols[i]), len(q_prev)))))
+            idx = min(range(len(valid_sols)),
+                      key=lambda i: sum(abs(ang_diff(valid_sols[i][j], q_prev[j]))
+                                        for j in range(min(len(valid_sols[i]), len(q_prev)))))
         else:
             idx = 0
 
-        p.solutions = [list(map(float, s)) for s in sols]
-        p.max_solutions = len(sols)
+        p.solutions = [list(map(float, s)) for s in valid_sols]
+        p.max_solutions = len(valid_sols)
         p.current_index = idx
         p.solution_index_ui = idx + 1
         q_sel = p.solutions[idx]
@@ -67,10 +109,27 @@ class OBJECT_OT_teach_pose(bpy.types.Operator):
 
         apply_solution(arm, q_sel, frame, insert_keyframe=False)
 
-        p.status_text = f"Applied {idx+1}/{len(sols)}"
+        fk_func = get_forward_kinematics()
+        T_fk = fk_func(q_sel)
+        T_fk_world = compute_base_matrix(p) @ T_fk @ compute_tcp_offset_matrix(p)
 
+        pos_fk = T_fk_world[:3, 3] * 1000
+        rot_fk = Matrix(T_fk_world[:3, :3]).to_euler('XYZ')
+        rot_fk_deg = [math.degrees(a) for a in rot_fk]
+
+        pos_goal = T_goal[:3, 3] * 1000
+        rot_goal = Matrix(T_goal[:3, :3]).to_euler('XYZ')
+        rot_goal_deg = [math.degrees(a) for a in rot_goal]
+
+        print("[DEBUG] FK vs Target comparison")
+        print(f"  Target Pos (mm): {np.round(pos_goal,2)}")
+        print(f"  FK Pos     (mm): {np.round(pos_fk,2)}")
+        print(f"  Target Rot (°):  {[round(v,2) for v in rot_goal_deg]}")
+        print(f"  FK Rot     (°):  {[round(v,2) for v in rot_fk_deg]}")
+
+        p.status_text = f"Applied {idx+1}/{len(valid_sols)}"
         return {'FINISHED'}
-    
+
 # ──────────────────────────────────────────────────────────────
 class OBJECT_OT_execute_linear_motion(bpy.types.Operator):
     bl_idname = "object.execute_linear_motion"
@@ -229,7 +288,6 @@ class OBJECT_OT_record_tcp_point(bpy.types.Operator):
         dup["_RNA_UI"]["wait_time_sec"] = {"min": 0.0, "max": 10.0, "soft_min": 0.0, "soft_max": 10.0}
 
         dup.matrix_world = tgt.matrix_world
-        dup.scale = tgt.scale * 0.5
         dup["index"] = new_idx
         dup["motion_type"] = "LINEAR"
         dup["fixed_q3"] = p.fixed_q3
@@ -303,11 +361,11 @@ class OBJECT_OT_apply_preview_pose(bpy.types.Operator):
 
         p.status_text = f"Keyframed {p.current_index+1}/{len(p.solutions)}"
         return {'FINISHED'}
-
-# ────────────────────────────────────────────────────────────── 
+    
+# ──────────────────────────────────────────────────────────────
 class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
     bl_idname = "object.bake_teach_sequence"
-    bl_label = "Bake Sequence"
+    bl_label  = "Bake Sequence"
 
     def execute(self, ctx):
 
@@ -319,114 +377,118 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
             self.report({'ERROR'}, "Armature / Goal / Teach data not set")
             return {'CANCELLED'}
 
-        tps = [tp for tp in coll.objects
-            if tp.name.startswith("P.") and tp.get("bake_enabled", False)]
+        tps = sorted(
+            (o for o in coll.objects if o.name.startswith("P.") and o.get("bake_enabled", False)),
+            key=lambda o: o.get("index", 9999)
+        )
         if not tps:
             self.report({'WARNING'}, "No TCPs selected for baking")
             return {'CANCELLED'}
 
-        tps = sorted(tps, key=lambda o: o.get("index", 9999))
+        fps           = ctx.scene.render.fps
+        default_speed = p.motion_speed
+        default_wait  = p.wait_time_sec
+        f             = p.bake_start_frame
 
-        fps            = ctx.scene.render.fps
-        default_speed  = p.motion_speed
-        default_wait_s = p.wait_time_sec
-        f0          = p.bake_start_frame
-        giz_scale   = giz.scale[:]
-        f           = f0
+        fk_func = get_forward_kinematics()
+        T_base  = compute_base_matrix(p)
+        T_off   = compute_tcp_offset_matrix(p)
 
         for i, tp in enumerate(tps):
-            q_tp = tp.get("joint_pose")
-            if q_tp is None:
+
+            q_tp = np.asarray(tp.get("joint_pose"), float)
+            if q_tp.size == 0:
                 self.report({'WARNING'}, f"{tp.name} missing joint_pose")
                 return {'CANCELLED'}
+            q_tp_deg = [round(math.degrees(a),1) for a in q_tp]
 
             giz.matrix_world = tp.matrix_world.copy()
-            giz.scale        = giz_scale
             ctx.scene.frame_set(f)
             apply_solution(arm, q_tp, f, insert_keyframe=True)
 
-            wait_s     = tp.get("wait_time_sec", default_wait_s)
+            fk_world = T_base @ fk_func(q_tp) @ T_off
+            tcp_pos  = np.array(tp.matrix_world.translation) * 1000
+            fk_pos   = fk_world[:3,3] * 1000
+            print(f"[CHK] TCP {tp.name} FK = {np.round(fk_pos,1)} mm | TCP = {np.round(tcp_pos,1)} mm")
+            print(f"[CHK] TCP {tp.name} Q_saved = {q_tp_deg}")
+
+            wait_s     = tp.get("wait_time_sec", default_wait)
             wait_frames = round(wait_s * fps)
-            if wait_frames > 0:
+            if wait_frames > 1:
                 f_wait_end = f + wait_frames - 1
                 ctx.scene.frame_set(f_wait_end)
                 apply_solution(arm, q_tp, f_wait_end, insert_keyframe=True)
+                fk_wait = T_base @ fk_func(q_tp) @ T_off
+                fk_wpos = fk_wait[:3,3] * 1000
+                print(f"[BAKE] {tp.name} | Wait {wait_s}s → {wait_frames} frames (f{f} ~ f{f_wait_end})")
+                print(f"[CHK] WAIT {tp.name} FK = {np.round(fk_wpos,1)} mm | TCP = {np.round(tcp_pos,1)} mm | Q_wait = {q_tp_deg}")
                 f = f_wait_end
 
             if i == len(tps) - 1:
-                break
+                continue
 
-            next_tp   = tps[i + 1]
-            motion    = tp.get("motion_type", "LINEAR").upper()
-            A        = np.array(tp.matrix_world.translation)
-            B        = np.array(next_tp.matrix_world.translation)
-            dist_mm  = np.linalg.norm(B - A) * 1000.0
-            speed_mm = tp.get("speed", default_speed)
-            motion_s = dist_mm / max(speed_mm, 1e-3)
-            span     = max(1, round(motion_s * fps))
+            next_tp = tps[i + 1]
+            motion  = tp.get("motion_type", "LINEAR").upper()
+
+            A         = np.array(tp.matrix_world.translation)
+            B         = np.array(next_tp.matrix_world.translation)
+            dist_mm   = np.linalg.norm(B - A) * 1000.0
+            speed_mm  = tp.get("speed", default_speed)
+            motion_s  = dist_mm / max(speed_mm, 1e-3)
+            span      = max(1, round(motion_s * fps))
+
+            print(f"[BAKE] Segment: {tp.name} → {next_tp.name}")
+            print(f"  Distance: {round(dist_mm,1)} mm  |  Speed: {speed_mm} mm/s")
+            print(f"  Motion time: {round(motion_s,3)} s | Frame span: {span}")
+            print(f"  Start frame: {f} → End frame: {f+span-1}")
 
             if motion == "LINEAR":
-
+                precise_done = False
                 if get_armature_type(p.robot_type) == "KUKA" and p.precise_linear:
-                    q_start_raw = tp.get("joint_pose")
-                    q_start = np.asarray(q_start_raw, float) if q_start_raw else None
+                    q_start = np.asarray(q_tp, float)
+                    T_start = T_base @ fk_func(q_start) @ T_off
+                    T_goal  = np.array(next_tp.matrix_world)
+                    T_flange = np.linalg.inv(T_base) @ T_goal @ np.linalg.inv(T_off)
 
-                    if q_start is not None:
-                        fk_func = get_forward_kinematics()
-                        T_base  = compute_base_matrix(p)
-                        T_off   = compute_tcp_offset_matrix(p)
+                    p.step_mm = dist_mm / max(span, 1)
+                    path = linear_move(q_start, T_flange, p)
+                    if path:
+                        print(f"  [IK] Precise LIN solved, path length = {len(path)}")
+                        for k, q in enumerate(path):
+                            fk_k  = T_base @ fk_func(q) @ T_off
+                            pos_k = fk_k[:3,3] * 1000
+                            print(f"    Step {k}: FK_pos = {np.round(pos_k,1)} mm | Q = {[round(math.degrees(a),1) for a in q]}")
+                            ctx.scene.frame_set(f + k)
+                            apply_solution(arm, q, f + k, insert_keyframe=True)
 
-                        T_start = T_base @ fk_func(q_start) @ T_off
-                        T_goal  = T_start.copy()
-                        T_goal[:3, 3] = np.array(next_tp.matrix_world)[:3, 3]
-                        T_goal_flange = np.linalg.inv(T_base) @ T_goal @ np.linalg.inv(T_off)
+                        fk_end  = T_base @ fk_func(path[-1]) @ T_off
+                        tcp_end = np.array(next_tp.matrix_world.translation) * 1000
+                        print(f"[CHK] LIN start FK = {np.round((T_start[:3,3]*1000),1)} mm | TCP {tp.name} = {np.round(tcp_pos,1)} mm")
+                        print(f"[CHK] LIN start Q_fk = {[round(math.degrees(a),1) for a in path[0]]} | Q_tcp = {q_tp_deg}")
+                        print(f"[CHK] LIN end   FK = {np.round((fk_end[:3,3]*1000),1)} mm | TCP {next_tp.name} = {np.round(tcp_end,1)} mm")
+                        print(f"[CHK] LIN end   Q_fk = {[round(math.degrees(a),1) for a in path[-1]]} | Q_tcp = {[round(math.degrees(a),1) for a in next_tp.get('joint_pose',[])]}")
 
-                        start_pos = T_start[:3, 3] * 1000
-                        goal_pos  = T_goal[:3, 3] * 1000
-                        dist_mm   = np.linalg.norm(goal_pos - start_pos)
-                        fps = ctx.scene.render.fps
-                        speed = tp.get("speed", p.motion_speed)
+                        next_tp["joint_pose"] = list(map(float, path[-1]))
+                        f += len(path) - 1
+                        precise_done = True
 
-                        motion_time_sec = dist_mm / max(speed, 1e-3)
-                        n_steps = round(motion_time_sec * fps)
-                        auto_step_mm = dist_mm / max(n_steps, 1)
-
-                        p.step_mm = auto_step_mm
-                        path = linear_move(q_start, T_goal_flange, p)
-                        if path:
-                            for i, q in enumerate(path):
-                                ctx.scene.frame_set(f + i + 1)
-                                apply_solution(arm, q, f + i + 1, insert_keyframe=True)
-
-                            next_tp["joint_pose"] = list(map(float, path[-1]))
-                            f += len(path)
-                            continue
-
-                    if get_armature_type(p.robot_type) == "KUKA":
-                        p.fixed_q3 = float(tp.get("fixed_q3", p.fixed_q3))
-
-                p.goal_object   = giz
-                p.linear_target = next_tp
-                p.linear_frames = span
-
-                ctx.scene.frame_set(f + 1)
-                bpy.ops.object.execute_linear_motion('EXEC_DEFAULT')
-                f += span
+                if not precise_done:
+                    p.goal_object   = giz
+                    p.linear_target = next_tp
+                    p.linear_frames = span
+                    ctx.scene.frame_set(f + 1)
+                    bpy.ops.object.execute_linear_motion('EXEC_DEFAULT')
+                    f += span - 1
 
             elif motion == "JOINT":
                 q_next = next_tp.get("joint_pose")
                 if q_next is None:
                     self.report({'WARNING'}, f"{next_tp.name} missing joint_pose")
                     return {'CANCELLED'}
-
-                end_frame = f + span
-                ctx.scene.frame_set(end_frame)
-                apply_solution(arm, q_next, end_frame, insert_keyframe=True)
-
+                ctx.scene.frame_set(f + span - 1)
+                apply_solution(arm, q_next, f + span - 1, insert_keyframe=True)
                 giz.matrix_world = next_tp.matrix_world.copy()
-                giz.scale        = giz_scale
-
-                f = end_frame
+                f += span - 1
 
             else:
                 self.report({'WARNING'}, f"{tp.name} unsupported motion_type")
@@ -440,66 +502,97 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
 # ────────────────────────────────────────────────────────────── 
 class OBJECT_OT_update_tcp_pose(bpy.types.Operator):
     bl_idname = "object.update_tcp_pose"
-    bl_label  = "Update TCP Pose"
+    bl_label = "Update TCP Pose"
 
     name: bpy.props.StringProperty()
 
     def execute(self, ctx):
-        p   = ctx.scene.ik_motion_props
+        print("▶ [UPDATE TCP] Operator invoked")
+
+        p = ctx.scene.ik_motion_props
         arm = bpy.data.objects.get(p.armature)
-        obj = bpy.data.objects.get(self.name or (p.selected_teach_point.name if p.selected_teach_point else None))
+
+        obj_name = self.name or (p.selected_teach_point.name if p.selected_teach_point else None)
+        print(f"→ Selected TCP: {obj_name}")
+        if not obj_name:
+            self.report({'ERROR'}, "No TCP name specified and no selected_teach_point")
+            return {'CANCELLED'}
+
+        obj = bpy.data.objects.get(obj_name)
+        if not obj:
+            self.report({'ERROR'}, f"Object '{obj_name}' not found")
+            return {'CANCELLED'}
+
         tgt = p.goal_object
         if not (arm and obj and tgt):
             self.report({'ERROR'}, "Goal / Waypoint / Armature not set")
             return {'CANCELLED'}
 
-        moved = not np.allclose(np.array(tgt.matrix_world), np.array(obj.matrix_world), atol=1e-6)
+        mat_tcp = np.array(obj.matrix_world)
+        mat_giz = np.array(tgt.matrix_world)
 
-        if moved:
-            obj.matrix_world = tgt.matrix_world.copy()
-            obj.scale *= 0.5
+        moved = not np.allclose(mat_tcp, mat_giz, atol=1e-6)
+        fixed_q3_changed = False
+
+        if get_armature_type(p.robot_type) == "KUKA":
+            prev_fixed_q3 = float(obj.get("fixed_q3", 0.0))
+            cur_fixed_q3 = float(p.fixed_q3)
+            fixed_q3_changed = abs(prev_fixed_q3 - cur_fixed_q3) > 1e-6
+
+        print(f"→ Moved: {moved}, fixed_q3 changed: {fixed_q3_changed}")
+
+        if moved or fixed_q3_changed:
+            print("→ Mode: IK update from Gizmo matrix + fixed_q3")
+
+            if moved:
+                obj.matrix_world = tgt.matrix_world.copy()
 
             T_goal = np.array(tgt.matrix_world)
-            q_sel, sols = get_best_ik_solution(p, T_goal)
+            q_ref = np.asarray(obj.get("joint_pose", []), float)
+            if q_ref.size > 0:
+                q_sel, sols = get_best_ik_solution(p, T_goal, q_ref=q_ref)
+            else:
+                q_sel, sols = get_best_ik_solution(p, T_goal)
+
+            print(f"→ IK solutions found: {len(sols)}")
             if not sols:
                 self.report({'ERROR'}, "IK failed")
                 return {'CANCELLED'}
 
-            q_ref = np.asarray(obj["joint_pose"], float) if "joint_pose" in obj else None
-            if q_ref is not None:
-                q_sel, sols = get_best_ik_solution(p, T_goal, q_ref=q_ref)
-
+            print(f"→ Applying q_sel: {[round(math.degrees(a),1) for a in q_sel]}")
             apply_solution(arm, q_sel, ctx.scene.frame_current, insert_keyframe=False)
-            found_index = None
-            for i, sol in enumerate(sols):
-                if np.allclose(sol, q_sel, atol=1e-6):
-                    found_index = i
-                    break
-            if found_index is None:
-                found_index = 0
 
+            found_index = next((i for i, s in enumerate(sols) if np.allclose(s, q_sel, atol=1e-6)), 0)
             obj["solution_index"] = found_index
             obj["joint_pose"]     = q_sel.tolist()
 
             if get_armature_type(p.robot_type) == "KUKA":
                 p.fixed_q3 = q_sel[2]
                 obj["fixed_q3"] = p.fixed_q3
+                print(f"→ Updated fixed_q3 from IK: {math.degrees(p.fixed_q3):.2f}°")
 
-            p.current_index     = found_index
+            p.solutions       = [list(map(float, s)) for s in sols]
+            p.max_solutions   = len(sols)
+            p.current_index   = found_index
             p.solution_index_ui = found_index + 1
-            p.status_text = f"{obj.name} updated from Gizmo"
+            p.status_text     = f"{obj.name} updated via IK"
 
         else:
+            print("→ Mode: Updating Gizmo from TCP")
+
             tgt.matrix_world = obj.matrix_world.copy()
-            tgt.scale        = (1, 1, 1)
+
             if "joint_pose" in obj:
                 q_stored = obj["joint_pose"]
                 apply_solution(arm, q_stored, ctx.scene.frame_current, insert_keyframe=False)
                 if get_armature_type(p.robot_type) == "KUKA":
                     p.fixed_q3 = q_stored[2]
-                p.current_index     = int(obj.get("solution_index", 0))
+                    print(f"→ Restored fixed_q3 from TCP: {math.degrees(p.fixed_q3):.2f}°")
+                p.solutions       = [q_stored]
+                p.max_solutions   = 1
+                p.current_index   = int(obj.get("solution_index", 0))
                 p.solution_index_ui = p.current_index + 1
-                p.status_text = f"Preview {obj.name}"
+                p.status_text     = f"Preview {obj.name}"
             else:
                 T_goal = np.array(tgt.matrix_world)
                 q_sel, sols = get_best_ik_solution(p, T_goal)
@@ -509,62 +602,61 @@ class OBJECT_OT_update_tcp_pose(bpy.types.Operator):
                 apply_solution(arm, q_sel, ctx.scene.frame_current, insert_keyframe=False)
                 obj["solution_index"] = 0
                 obj["joint_pose"]     = q_sel.tolist()
-                p.current_index = 0
+                p.solutions       = [list(map(float, s)) for s in sols]
+                p.max_solutions   = len(sols)
+                p.current_index   = 0
                 p.solution_index_ui = 1
-                p.status_text = f"{obj.name} previewed"
+                p.status_text     = f"{obj.name} previewed"
 
-        bpy.ops.object.draw_teach_path()
+        print("✔ [UPDATE TCP] Done")
         return {'FINISHED'}
 
 # ────────────────────────────────────────────────────────────── 
-def preview_obj_pose(ctx, obj, forward: bool):
+def preview_obj_pose(ctx, obj, forward=True):
+
     p = ctx.scene.ik_motion_props
+    p.selected_teach_point = obj
+
+    if p.goal_object:
+        p.goal_object.matrix_world = obj.matrix_world.copy()
+        p.goal_object.scale = (1, 1, 1)
+
     arm = bpy.data.objects.get(p.armature)
+    if not arm:
+        print("[PREVIEW] Armature not found")
+        return
 
-    for o in ctx.selected_objects:
-        o.select_set(False)
-    obj.select_set(True)
-    ctx.view_layer.objects.active = obj
+    if "joint_pose" in obj:
+        q = obj["joint_pose"]
+        apply_solution(arm, q, ctx.scene.frame_current, insert_keyframe=False)
+        print(f"[PREVIEW] Previewing TCP: {obj.name}")
+        pos = obj.matrix_world.to_translation()
+        rot = obj.matrix_world.to_euler('XYZ')
+        print(f"[PREVIEW] Position: {np.round(pos[:], 4)}")
+        print(f"[PREVIEW] Rotation (deg): {np.round(np.degrees(rot[:]), 1)}")
+        print(f"[PREVIEW] Using saved joint_pose: {[round(math.degrees(a), 2) for a in q]}")
+        return
 
-    if "joint_pose" in obj and arm:
-        apply_solution(arm, obj["joint_pose"], ctx.scene.frame_current, insert_keyframe=False)
-        if p.goal_object:
-            p.goal_object.matrix_world = obj.matrix_world
-            p.goal_object.scale = (1, 1, 1)
-        if obj != p.selected_teach_point:
-            p.selected_teach_point = obj
-
-        if len(obj["joint_pose"]) >= 3:
-            p.fixed_q3 = obj.get("fixed_q3", obj["joint_pose"][2])
-            idx = int(obj.get("solution_index", 0))
-            p.solution_index_ui = idx + 1
-            p.current_index = idx
-            p.fixed_q3_deg = p.fixed_q3
-
-        p.status_text = f"Preview {obj.name} (stored)"
-        return {'FINISHED'}
-
+    # Fallback: solve IK
     T_goal = np.array(obj.matrix_world)
     q_sel, sols = get_best_ik_solution(p, T_goal)
     if not sols:
-        p.status_text = "IK failed"
-        return {'CANCELLED'}
+        print("[PREVIEW] No IK solution found")
+        return
 
-    idx_saved = int(obj.get("solution_index", 0))
-    idx = max(0, min(idx_saved, len(sols) - 1))
+    apply_solution(arm, q_sel, ctx.scene.frame_current, insert_keyframe=False)
+    pos = obj.matrix_world.to_translation()
+    rot = obj.matrix_world.to_euler('XYZ')
 
-    if arm:
-        apply_solution(arm, sols[idx], ctx.scene.frame_current, insert_keyframe=False)
-
-    if p.goal_object:
-        p.goal_object.matrix_world = obj.matrix_world
-        p.goal_object.scale = (1, 1, 1)
-
-    if ctx.area:
-        ctx.area.tag_redraw()
-
-    p.status_text = f"Preview {obj.name} (IK pose {idx+1})"
-    return {'FINISHED'}
+    print(f"[PREVIEW] Previewing TCP: {obj.name}")
+    print(f"[PREVIEW] Position: {np.round(pos[:], 4)}")
+    print(f"[PREVIEW] Rotation (deg): {np.round(np.degrees(rot[:]), 1)}")
+    print(f"[IK] Solving IK for T_goal:")
+    print(np.round(T_goal, 4))
+    print(f"[IK] Valid IK solutions: {len(sols)}")
+    for i, q in enumerate(sols):
+        print(f"  sol[{i}] = {[round(math.degrees(a), 2) for a in q]}")
+    print(f"[IK] Selected solution: {[round(math.degrees(a), 2) for a in q_sel]}")
 
 # ────────────────────────────────────────────────────────────── 
 class OBJECT_OT_toggle_motion_type(bpy.types.Operator):
@@ -642,7 +734,6 @@ class OBJECT_OT_snap_gizmo_on_path(bpy.types.Operator):
 
         giz.location = (1 - t) * A + t * B
         giz.rotation_euler = Q.to_euler()
-        giz.scale = (1, 1, 1)
 
         T_goal = np.eye(4)
         T_goal[:3, :3] = Q.to_matrix()
@@ -712,29 +803,26 @@ class OBJECT_OT_apply_global_wait(bpy.types.Operator):
 # ──────────────────────────────────────────────────────────────   
 class OBJECT_OT_tcp_list_select(bpy.types.Operator):
     bl_idname = "object.tcp_list_select"
-    bl_label  = "Select TCP from List"
+    bl_label = "Snap + Preview"
+
     index: bpy.props.IntProperty()
 
     def execute(self, ctx):
         p = ctx.scene.ik_motion_props
-        lst = p.tcp_sorted_list
-        if not lst:
+
+        if not (0 <= self.index < len(p.tcp_sorted_list)):
             return {'CANCELLED'}
 
-        if self.index < 0 or self.index >= len(lst):
-            return {'CANCELLED'}
-
-        tcp_item = lst[self.index]
-        obj = bpy.data.objects.get(tcp_item.name)
+        name = p.tcp_sorted_list[self.index].name
+        obj = bpy.data.objects.get(name)
         if not obj:
             return {'CANCELLED'}
 
         p.selected_teach_point = obj
         p.tcp_list_index = self.index
 
-        arm = bpy.data.objects.get(p.armature)
-        if "joint_pose" in obj and arm:
-            apply_solution(arm, list(obj["joint_pose"]), ctx.scene.frame_current, insert_keyframe=False)
+        from rteach.ops.ops_teach_main import preview_obj_pose
+        preview_obj_pose(ctx, obj, forward=False)
 
         return {'FINISHED'}
     
@@ -768,7 +856,6 @@ class OBJECT_OT_record_tcp_from_jog(bpy.types.Operator):
         giz = p.goal_object
         if giz:
             giz.matrix_world = Matrix(T_world)
-            giz.scale = (1, 1, 1)
 
         bpy.ops.object.record_tcp_point('INVOKE_DEFAULT')
         p.status_text = "TCP recorded from Jog (FK pose)"
@@ -834,7 +921,7 @@ class OBJECT_OT_record_goal_pose(bpy.types.Operator):
 # ──────────────────────────────────────────────────────────────  
 class OBJECT_OT_preview_tcp_prev_pose(bpy.types.Operator):
     bl_idname = "object.preview_tcp_prev_pose"
-    bl_label  = "Prev TCP + Pose"
+    bl_label = "Prev TCP + Pose"
 
     def execute(self, ctx):
         p = ctx.scene.ik_motion_props
@@ -849,12 +936,14 @@ class OBJECT_OT_preview_tcp_prev_pose(bpy.types.Operator):
             if obj:
                 p.selected_teach_point = obj
                 apply_selected_tcp_pose(ctx)
-        return {'FINISHED'}
 
+                if p.goal_object:
+                    p.goal_object.matrix_world = obj.matrix_world.copy()
+        return {'FINISHED'}
 
 class OBJECT_OT_preview_tcp_next_pose(bpy.types.Operator):
     bl_idname = "object.preview_tcp_next_pose"
-    bl_label  = "Next TCP + Pose"
+    bl_label = "Next TCP + Pose"
 
     def execute(self, ctx):
         p = ctx.scene.ik_motion_props
@@ -869,6 +958,9 @@ class OBJECT_OT_preview_tcp_next_pose(bpy.types.Operator):
             if obj:
                 p.selected_teach_point = obj
                 apply_selected_tcp_pose(ctx)
+
+                if p.goal_object:
+                    p.goal_object.matrix_world = obj.matrix_world.copy()
         return {'FINISHED'}
 
     
