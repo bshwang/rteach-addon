@@ -5,22 +5,29 @@ import math
 from rteach.core.core import apply_solution
 
 class TcpItem(bpy.types.PropertyGroup):
-    name: bpy.props.StringProperty(name="TCP Name")
-
-def _on_robot_type_changed(self, context):
-    rebuild_jog_sliders(self.robot_type)      
+    name: bpy.props.StringProperty(name="TCP Name")  
 
 def update_ik_index_preview(self, ctx):
-    p = ctx.scene.ik_motion_props
+    import math
+    p   = ctx.scene.ik_motion_props
     arm = bpy.data.objects.get(p.armature)
+
     if not p.solutions or not arm:
+        print("[IK_PREVIEW] No solutions or armature not found")
         return
 
     idx = p.solution_index_ui - 1
-    if 0 <= idx < len(p.solutions):
-        q_sel = p.solutions[idx]
-        apply_solution(arm, q_sel, ctx.scene.frame_current, insert_keyframe=False)
-        p.current_index = idx
+    if not (0 <= idx < len(p.solutions)):
+        print(f"[IK_PREVIEW] Index {idx} out of range")
+        return
+
+    q_sel = p.solutions[idx]
+    print(f"[IK_PREVIEW] Apply idx {idx}: "
+          f"{[round(math.degrees(a),2) for a in q_sel]}")
+
+    from rteach.core.core import apply_solution
+    apply_solution(arm, q_sel, ctx.scene.frame_current, insert_keyframe=False)
+    p.current_index = idx
 
 def in_collections(collection_names):
     def _poll(self, obj):
@@ -321,11 +328,11 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         try: return json.loads(self.solutions_json)
         except: return []
     @solutions.setter
-    def solutions(self,v): self.solutions_json=json.dumps(v)
+    def solutions(self,v): self.solutions_json=json.dumps([list(q) for q in v])
 
     @property
     def temp_solutions(self):
         try: return json.loads(self.ik_temp_solutions)
         except: return []
     @temp_solutions.setter
-    def temp_solutions(self, v): self.ik_temp_solutions = json.dumps(v)
+    def temp_solutions(self, v): self.ik_temp_solutions = json.dumps([list(q) for q in v])
