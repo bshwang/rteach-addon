@@ -3,6 +3,7 @@ import math
 import json
 import csv
 import re
+import os
 
 import numpy as np
 from pathlib import Path
@@ -303,10 +304,13 @@ class OBJECT_OT_snap_goal_to_active(bpy.types.Operator):
 # ────────────────────────────────────────────────────────────── 
 class OBJECT_OT_focus_on_target(bpy.types.Operator):
     bl_idname = "object.focus_on_target"
-    bl_label = "Focus on Target"
+    bl_label  = "Focus on Target"
 
     def execute(self, ctx):
-        p = ctx.scene.ik_motion_props
+        if ctx.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        p   = ctx.scene.ik_motion_props
         tgt = p.goal_object
 
         if not tgt:
@@ -365,50 +369,68 @@ def update_tcp_sorted_list():
 
 # ──────────────────────────────────────────────────────────────     
 class OBJECT_OT_export_teach_data(bpy.types.Operator):
-    """Export Teach Data (TCP pose + joint angles)"""
     bl_idname = "object.export_teach_data"
-    bl_label = "Export Teach Data (.json)"
+    bl_label  = "Export Teach Data (.json)"
 
     def execute(self, ctx):
-
-        p = ctx.scene.ik_motion_props
-        base = p.base_object
-        coll = bpy.data.collections.get("Teach data")
-        if not base or not coll:
-            self.report({'ERROR'}, "Base or Teach data not found")
+        p       = ctx.scene.ik_motion_props
+        arm_obj = bpy.data.objects.get(p.armature)
+        coll    = bpy.data.collections.get("Teach data")
+        if not arm_obj or not coll:
+            self.report({'ERROR'}, "Armature or Teach data missing")
             return {'CANCELLED'}
 
-        base_inv = base.matrix_world.inverted()
-        tps = sorted(coll.objects, key=lambda o: o.get("index", 9999))
+        inv = arm_obj.matrix_world.inverted()
+        tps = sorted(coll.objects, key=lambda o: o.get("seq",0))
 
         data = []
+        prev_tp = None
         for tp in tps:
-            mat_rel = base_inv @ tp.matrix_world
-            pos = mat_rel.to_translation()
-            quat = mat_rel.to_quaternion()
-
-            q = tp.get("joint_pose")
-            if not q:
+            if not prev_tp:
+                prev_tp = tp
                 continue
 
+            def make_point(obj):
+                mat   = inv @ obj.matrix_world
+                pos   = mat.to_translation()
+                quat  = mat.to_quaternion()
+                qp    = obj.get("joint_pose", [])
+                pt    = {}
+                for i, v in enumerate(qp):
+                    pt[f"A{i+1}"] = round(v, 6)
+                mt = obj.get("motion_type", "JOINT")
+                pt["MoveType"] = "PTP" if mt=="JOINT" else "LIN"
+                pt["QW"]       = round(quat.w, 6)
+                pt["QX"]       = round(quat.x, 6)
+                pt["QY"]       = round(quat.y, 6)
+                pt["QZ"]       = round(quat.z, 6)
+                pt["X"]        = round(pos.x, 6)
+                pt["Y"]        = round(pos.y, 6)
+                pt["Z"]        = round(pos.z, 6)
+                return pt
+
+            start_pt  = make_point(prev_tp)
+            goal_pt   = make_point(tp)
+            path_name = f"FROM_{prev_tp['goal']}_TO_{tp['goal']}"
+
             data.append({
-                "name": tp.name,
-                "position_m": [round(pos.x, 6), round(pos.y, 6), round(pos.z, 6)],
-                "quaternion": [round(quat.x, 6), round(quat.y, 6), round(quat.z, 6), round(quat.w, 6)],
-                "joint_pose_rad": [round(v, 6) for v in q]
+                "Path":   path_name,
+                "Points": [
+                    {"StartPoint": start_pt, "GoalPoint": goal_pt}
+                ],
+                "Robot": arm_obj.name
             })
 
-        if not data:
-            self.report({'WARNING'}, "No waypoints with joint data")
-            return {'CANCELLED'}
+            prev_tp = tp
 
-        path = Path(bpy.path.abspath("//export_teach_data.json"))
-        with open(path, "w", encoding="utf-8") as f:
+        filename = p.export_teach_filename
+        filepath = bpy.path.abspath(f"//{filename}.json")
+        with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
-        self.report({'INFO'}, f"Exported {len(data)} TCPs → {path.name}")
+        self.report({'INFO'}, f"Exported {len(data)} segments → {os.path.basename(filepath)}")
         return {'FINISHED'}
-    
+
 # ──────────────────────────────────────────────────────────────   
 class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
     bl_idname = "object.export_joint_graph_csv"
@@ -489,7 +511,8 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
 
             data.append(row)
 
-        path = Path(bpy.path.abspath("//joint_graph.csv"))
+        filename = ctx.scene.ik_motion_props.export_joint_csv_filename
+        path = Path(bpy.path.abspath(f"//{filename}.csv"))
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(headers)
@@ -791,9 +814,9 @@ class OBJECT_OT_toggle_tcp_bake_all(bpy.types.Operator):
         for tp in tps:
             if tp.name.startswith("P."):
                 tp["bake_enabled"] = state
-        scene.bake_all_state = state  # 저장 상태 toggle
+        scene.bake_all_state = state  
         return {'FINISHED'}
-
+    
 # ──────────────────────────────────────────────────────────────   
 classes = (
     OBJECT_OT_clear_path_visuals,
