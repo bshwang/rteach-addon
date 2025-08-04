@@ -12,6 +12,7 @@ from rteach.core.core import (
 )
 from rteach.core.core_iiwa import linear_move
 from rteach.ops.ops_teach_util import update_tcp_sorted_list
+from rteach.ops.ops_teach_main import get_best_ik_solution, apply_solution
 
 # ──────────────────────────────────────────────────────────────
 class OBJECT_OT_teach_pose(bpy.types.Operator):
@@ -295,6 +296,11 @@ class OBJECT_OT_record_tcp_point(bpy.types.Operator):
         dup["wait_time_sec"] = p.wait_time_sec
         dup["bake_enabled"] = True
         dup.show_name = True
+        dup["goal"] = ""
+
+        if "_RNA_UI" not in dup:
+            dup["_RNA_UI"] = {}
+        dup["_RNA_UI"]["goal"] = {"description":"Teach point goal name"}
 
         if p.solutions and len(p.solutions) > p.current_index:
             q_safe = [float(v) for v in p.solutions[p.current_index]]
@@ -502,52 +508,59 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
 # ────────────────────────────────────────────────────────────── 
 class OBJECT_OT_update_tcp_pose(bpy.types.Operator):
     bl_idname = "object.update_tcp_pose"
-    bl_label = "Update TCP Pose"
+    bl_label  = "Update TCP Pose"
 
     name: bpy.props.StringProperty()
 
     def execute(self, ctx):
         print("▶ [UPDATE TCP] Operator invoked")
 
-        p = ctx.scene.ik_motion_props
+        p   = ctx.scene.ik_motion_props
         arm = bpy.data.objects.get(p.armature)
+        obj = p.selected_teach_point
 
-        obj_name = self.name or (p.selected_teach_point.name if p.selected_teach_point else None)
-        print(f"→ Selected TCP: {obj_name}")
-        if not obj_name:
-            self.report({'ERROR'}, "No TCP name specified and no selected_teach_point")
-            return {'CANCELLED'}
-
-        obj = bpy.data.objects.get(obj_name)
         if not obj:
-            self.report({'ERROR'}, f"Object '{obj_name}' not found")
+            self.report({'ERROR'}, "No TCP selected in UI panel")
             return {'CANCELLED'}
+
+        if "Path" not in obj:
+            obj["Path"] = ""
 
         tgt = p.goal_object
-        if not (arm and obj and tgt):
-            self.report({'ERROR'}, "Goal / Waypoint / Armature not set")
+        if not (arm and tgt):
+            self.report({'ERROR'}, "Goal / Armature not set")
             return {'CANCELLED'}
 
-        mat_tcp = np.array(obj.matrix_world)
-        mat_giz = np.array(tgt.matrix_world)
+        if ctx.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.select_all(action='DESELECT')
+        obj.select_set(True)
+        ctx.view_layer.objects.active = obj
 
-        moved = not np.allclose(mat_tcp, mat_giz, atol=1e-6)
+        import numpy as np
+        from rteach.core.robot_state import get_armature_type
+        moved = not np.allclose(
+            np.array(obj.matrix_world),
+            np.array(tgt.matrix_world),
+            atol=1e-6
+        )
         fixed_q3_changed = False
-
         if get_armature_type(p.robot_type) == "KUKA":
-            prev_fixed_q3 = float(obj.get("fixed_q3", 0.0))
-            cur_fixed_q3 = float(p.fixed_q3)
-            fixed_q3_changed = abs(prev_fixed_q3 - cur_fixed_q3) > 1e-6
+            prev_q3 = float(obj.get("fixed_q3", 0.0))
+            cur_q3  = float(p.fixed_q3)
+            fixed_q3_changed = abs(prev_q3 - cur_q3) > 1e-6
 
         print(f"→ Moved: {moved}, fixed_q3 changed: {fixed_q3_changed}")
 
         if moved or fixed_q3_changed:
-            print("→ Mode: IK update from Gizmo matrix + fixed_q3")
+            print("→ Mode: IK update from TCP → Gizmo")
+            tgt.matrix_world = obj.matrix_world.copy()
 
-            if moved:
-                obj.matrix_world = tgt.matrix_world.copy()
+            q = tgt.matrix_world.to_quaternion()
+            T_goal = np.eye(4)
+            T_goal[:3, :3] = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
+            T_goal[:3, 3] = np.array(tgt.matrix_world.to_translation())
 
-            T_goal = np.array(tgt.matrix_world)
             q_ref = np.asarray(obj.get("joint_pose", []), float)
             if q_ref.size > 0:
                 q_sel, sols = get_best_ik_solution(p, T_goal, q_ref=q_ref)
@@ -562,24 +575,24 @@ class OBJECT_OT_update_tcp_pose(bpy.types.Operator):
             print(f"→ Applying q_sel: {[round(math.degrees(a),1) for a in q_sel]}")
             apply_solution(arm, q_sel, ctx.scene.frame_current, insert_keyframe=False)
 
-            found_index = next((i for i, s in enumerate(sols) if np.allclose(s, q_sel, atol=1e-6)), 0)
-            obj["solution_index"] = found_index
+            idx = next((i for i, s in enumerate(sols)
+                        if np.allclose(s, q_sel, atol=1e-6)), 0)
+            obj["solution_index"] = idx
             obj["joint_pose"]     = q_sel.tolist()
 
             if get_armature_type(p.robot_type) == "KUKA":
-                p.fixed_q3 = q_sel[2]
+                p.fixed_q3      = q_sel[2]
                 obj["fixed_q3"] = p.fixed_q3
                 print(f"→ Updated fixed_q3 from IK: {math.degrees(p.fixed_q3):.2f}°")
 
-            p.solutions       = [list(map(float, s)) for s in sols]
-            p.max_solutions   = len(sols)
-            p.current_index   = found_index
-            p.solution_index_ui = found_index + 1
-            p.status_text     = f"{obj.name} updated via IK"
+            p.solutions         = [list(map(float, s)) for s in sols]
+            p.max_solutions     = len(sols)
+            p.current_index     = idx
+            p.solution_index_ui = idx + 1
+            p.status_text       = f"{obj.name} updated via IK"
 
         else:
-            print("→ Mode: Updating Gizmo from TCP")
-
+            print("→ Mode: Updating Gizmo from TCP (no IK)")
             tgt.matrix_world = obj.matrix_world.copy()
 
             if "joint_pose" in obj:
@@ -588,13 +601,18 @@ class OBJECT_OT_update_tcp_pose(bpy.types.Operator):
                 if get_armature_type(p.robot_type) == "KUKA":
                     p.fixed_q3 = q_stored[2]
                     print(f"→ Restored fixed_q3 from TCP: {math.degrees(p.fixed_q3):.2f}°")
-                p.solutions       = [q_stored]
-                p.max_solutions   = 1
-                p.current_index   = int(obj.get("solution_index", 0))
+                p.solutions         = [q_stored]
+                p.max_solutions     = 1
+                p.current_index     = int(obj.get("solution_index", 0))
                 p.solution_index_ui = p.current_index + 1
-                p.status_text     = f"Preview {obj.name}"
+                p.status_text       = f"Preview {obj.name}"
             else:
-                T_goal = np.array(tgt.matrix_world)
+                tgt.matrix_world = obj.matrix_world.copy()
+                q = tgt.matrix_world.to_quaternion()
+                T_goal = np.eye(4)
+                T_goal[:3, :3] = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
+                T_goal[:3, 3] = np.array(tgt.matrix_world.to_translation())
+
                 q_sel, sols = get_best_ik_solution(p, T_goal)
                 if not sols:
                     self.report({'ERROR'}, "IK failed")
@@ -602,13 +620,40 @@ class OBJECT_OT_update_tcp_pose(bpy.types.Operator):
                 apply_solution(arm, q_sel, ctx.scene.frame_current, insert_keyframe=False)
                 obj["solution_index"] = 0
                 obj["joint_pose"]     = q_sel.tolist()
-                p.solutions       = [list(map(float, s)) for s in sols]
-                p.max_solutions   = len(sols)
-                p.current_index   = 0
-                p.solution_index_ui = 1
-                p.status_text     = f"{obj.name} previewed"
+                p.solutions           = [list(map(float, s)) for s in sols]
+                p.max_solutions       = len(sols)
+                p.current_index       = 0
+                p.solution_index_ui   = 1
+                p.status_text         = f"{obj.name} previewed"
+
+        obj["last_matrix_world"] = list(obj.matrix_world)
 
         print("✔ [UPDATE TCP] Done")
+        return {'FINISHED'}
+  
+# ────────────────────────────────────────────────────────────── 
+class OBJECT_OT_update_all_tcp_poses(bpy.types.Operator):
+    bl_idname = "object.update_all_tcp_poses"
+    bl_label  = "Update All TCPs"
+
+    def execute(self, ctx):
+        p = ctx.scene.ik_motion_props
+
+        for idx, tp in enumerate(p.tcp_sorted_list):
+            # TcpItem → 실제 Object 로 변환
+            obj = bpy.data.objects.get(tp.name)
+            if not obj:
+                self.report({'WARNING'}, f"TCP '{tp.name}' not found, skip")
+                continue
+
+            # UI 패널 기준 선택 변경
+            p.selected_teach_point = obj
+            p.tcp_list_index       = idx
+
+            # 각 TCP 에 대해 Update 로직 호출
+            # name 파라미터로 obj.name 을 넘기면, 내부에서 selected_teach_point 대신 사용됨
+            bpy.ops.object.update_tcp_pose(name=obj.name)
+
         return {'FINISHED'}
 
 # ────────────────────────────────────────────────────────────── 
@@ -803,27 +848,31 @@ class OBJECT_OT_apply_global_wait(bpy.types.Operator):
 # ──────────────────────────────────────────────────────────────   
 class OBJECT_OT_tcp_list_select(bpy.types.Operator):
     bl_idname = "object.tcp_list_select"
-    bl_label = "Snap + Preview"
+    bl_label  = "Snap + Preview"
 
     index: bpy.props.IntProperty()
 
     def execute(self, ctx):
         p = ctx.scene.ik_motion_props
-
         if not (0 <= self.index < len(p.tcp_sorted_list)):
             return {'CANCELLED'}
-
         name = p.tcp_sorted_list[self.index].name
-        obj = bpy.data.objects.get(name)
+        obj  = bpy.data.objects.get(name)
         if not obj:
             return {'CANCELLED'}
 
         p.selected_teach_point = obj
-        p.tcp_list_index = self.index
+        p.tcp_list_index       = self.index
 
-        from rteach.ops.ops_teach_main import preview_obj_pose
+        if get_armature_type(p.robot_type) == "KUKA":
+            source_fixed_q3 = obj.get("fixed_q3", 0.0)  # stored in radians
+            p.fixed_q3_deg  = source_fixed_q3          # assign radian to ANGLE-type property :contentReference[oaicite:2]{index=2}
+
+            ui_deg = math.degrees(p.fixed_q3_deg)
+            print(f"[DEBUG] UI R angle (deg): {ui_deg:.2f}°")
+            print(f"[DEBUG] → obj['fixed_q3']: {source_fixed_q3:.6f} rad  →  {math.degrees(source_fixed_q3):.2f}°")
+
         preview_obj_pose(ctx, obj, forward=False)
-
         return {'FINISHED'}
     
 # ──────────────────────────────────────────────────────────────    
@@ -983,6 +1032,7 @@ classes = (
     OBJECT_OT_apply_preview_pose,
     OBJECT_OT_bake_teach_sequence,
     OBJECT_OT_update_tcp_pose,
+    OBJECT_OT_update_all_tcp_poses,
     OBJECT_OT_toggle_motion_type,
     OBJECT_OT_clear_bake_keys,
     OBJECT_OT_snap_gizmo_on_path,
