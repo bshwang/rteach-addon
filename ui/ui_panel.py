@@ -306,6 +306,14 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.operator("object.preview_tcp_next_pose", text="", icon='FORWARD')
         else:
             row.label(text="Selected: None", icon='PINNED')
+            
+        # Goal Label
+        row = box.row(align=True)
+        row.label(text="Goal label:")
+        if obj:
+            row.prop(obj, '["goal"]', text="")
+        else:
+            row.label(text="None")
 
         # Motion
         row = box.row(align=True)
@@ -344,7 +352,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
                 row.operator("object.apply_preview_pose", text="", icon='EXPORT')
         else:
             row.label(text="None")
-            
+        
         if "iiwa" in p.armature.lower():
             row = box.row(align=True)
             row.label(text="R angle (q3)")
@@ -364,7 +372,10 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row = box.row(align=True)
         row.operator("object.preview_goal_pose", text="Preview", icon='HIDE_OFF')
         row.operator("object.record_goal_pose",  text="Record",  icon='REC')
+
+        row = box.row(align=True)
         row.operator("object.update_tcp_pose", text="Update", icon='EXPORT')
+        row.operator("object.update_all_tcp_poses", text="Recompute All", icon='FILE_REFRESH')
 
         if obj:
             next_idx = obj.get("index", 0) + 1
@@ -393,15 +404,12 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
 
         row = box.row(align=True)
         row.prop(p, "bake_start_frame", text="Start Frame")
-        row.prop(p, "precise_linear", text="LIN se(3)", icon='CONSTRAINT', toggle=True)
+        if "iiwa" in p.robot_type.lower():
+            row.prop(p, "precise_linear", text="LIN se(3)", icon='CONSTRAINT', toggle=True)
 
         row = box.row(align=True)
         row.operator("object.bake_teach_sequence", text="Bake", icon='FILE_TICK')
         row.operator("object.clear_bake_keys", text="", icon='TRASH')
-
-        row = box.row(align=True)
-        row.operator("object.draw_teach_path", text="Draw Path", icon='TRACKING_FORWARDS')
-        row.operator("object.toggle_path_visibility", text="Show/Hide Path", icon='HIDE_OFF')
 
         box.separator()
         box.label(text="🔸 Pick / Place")
@@ -448,30 +456,27 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         if not prefs.show_io:
             return
         p = ctx.scene.ik_motion_props
+
         box = L.box()
         row = box.row()
-        icon = 'TRIA_DOWN' if getattr(p, "show_io", True) else 'TRIA_RIGHT'
+        icon = 'TRIA_DOWN' if p.show_io else 'TRIA_RIGHT'
         row.prop(p, "show_io", icon=icon, text="Import / Export", emboss=False)
-
         if not p.show_io:
             return
 
-        grid = box.grid_flow(columns=4, align=True)
+        # ── JSON Export ──
+        json_box = box.box()
+        json_box.label(text="🔸 Export Teach Data (JSON)")
+        row = json_box.row(align=True)
+        row.prop(p, "export_teach_filename", text="")
+        row.operator("object.export_teach_data", text="", icon='EXPORT')
 
-        config = ROBOT_CONFIGS.get(p.robot_type, {})
-        joint_labels = [f"j{i+1}" for i in range(len(config.get("axes", [])))]
-        stage_labels = [j[1] for j in config.get("stage_joints", [])]
-
-        for i, label in enumerate(joint_labels):
-            if i < len(p.show_plot_joints):
-                grid.prop(p, 'show_plot_joints', index=i, text=label)
-        for i, label in enumerate(stage_labels):
-            idx = len(joint_labels) + i
-            if idx < len(p.show_plot_joints):
-                grid.prop(p, 'show_plot_joints', index=idx, text=label)
-
-        box.operator("object.export_joint_graph_csv", text="Export Joint CSV", icon='EXPORT')
-        box.operator("object.export_teach_data", text="Export Teach Data (.json)", icon='EXPORT')
+        # ── CSV Export ──
+        csv_box = box.box()
+        csv_box.label(text="🔸 Export Time-Series Data (CSV)")
+        row = csv_box.row(align=True)
+        row.prop(p, "export_joint_csv_filename", text="")
+        row.operator("object.export_joint_graph_csv", text="", icon='EXPORT')
 
 classes = [
     UI_UL_tcp_list,
