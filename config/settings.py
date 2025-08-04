@@ -49,6 +49,9 @@ def delayed_workspace_update():
     result = bpy.ops.object.toggle_workspace_visibility()
     return None
 
+class PathItem(bpy.types.PropertyGroup):
+    name: bpy.props.StringProperty(name="Goal Name")
+
 class IKMotionProperties(bpy.types.PropertyGroup):
 
     tcp_sorted_list: bpy.props.CollectionProperty(type=TcpItem)
@@ -103,7 +106,7 @@ class IKMotionProperties(bpy.types.PropertyGroup):
 
     wait_time_sec: bpy.props.FloatProperty(
         name="Wait Time (sec)",
-        default=0.5,
+        default=0.0,
         min=0.0,
         soft_max=10.0
     )
@@ -287,6 +290,17 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         min=0
     )
 
+    export_teach_filename: bpy.props.StringProperty(
+        name="Export Filename",
+        default="export_teachpoint",
+        description="Filename for Teach Data export (without extension)"
+    )
+    export_joint_csv_filename: bpy.props.StringProperty(
+        name="CSV Filename",
+        default="export_timeline",
+        description="Filename for Joint CSV export (without extension)"
+    )
+    path_goals: bpy.props.CollectionProperty(type=PathItem)
     show_io: bpy.props.BoolProperty(name="Show Import/Export", default=True)
 
     armature: bpy.props.EnumProperty(items=lambda s,c:[(o.name,o.name,'') for o in bpy.data.objects if o.type=='ARMATURE'] or [('None','None','')])
