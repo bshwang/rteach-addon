@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Robot Simulator for Blender",
     "author": "Beomsoo Hwang",
-    "version": (1, 2, 1),
+    "version": (1, 3, 0),
     "blender": (4, 3, 0),
     "location": "View3D > Sidebar > IK Solver",
     "description": "Robot motion simulation add-on",
@@ -26,7 +26,7 @@ from rteach.ops.ops_import_system import OBJECT_OT_import_robot_system
 from rteach.ui import ui_pie
 from rteach.ui import ui_overlay
 
-from rteach.config.settings import IKMotionProperties, TcpItem
+from rteach.config.settings import IKMotionProperties, TcpItem, PathItem
 from rteach.config.settings_static import JogProperties, StageJogProperties
 
 if not hasattr(bpy.types.Object, "motion_enum"):
@@ -42,6 +42,7 @@ if not hasattr(bpy.types.Object, "motion_enum"):
 
 classes = (
     TcpItem,
+    PathItem,
     StageJogProperties, 
     IKMotionProperties,
     JogProperties,
