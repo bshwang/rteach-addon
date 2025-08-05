@@ -3,16 +3,18 @@ import math
 import json
 import csv
 import re
-import os
+import tempfile, os, sys
 
 import numpy as np
+
 from pathlib import Path
 from mathutils import Vector
 from rteach.core.robot_presets import ROBOT_CONFIGS
 from rteach.core.core import get_forward_kinematics, get_BONES, get_AXES
 from rteach.config.settings import delayed_workspace_update
+from rteach.config.settings_static  import get_robot_axes, get_joint_limits
 from rteach.ext import dynamic_parent as dp
-from rteach.core.core import get_tcp_object
+from rteach.core.core import get_tcp_object, get_BONES
 
 def find_object_by_prefix(name: str) -> bpy.types.Object | None:
     """
@@ -424,11 +426,11 @@ class OBJECT_OT_export_teach_data(bpy.types.Operator):
             prev_tp = tp
 
         filename = p.export_teach_filename
-        filepath = bpy.path.abspath(f"//{filename}.json")
+        filepath = bpy.path.abspath(f"//{filename}")
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
-        self.report({'INFO'}, f"Exported {len(data)} segments → {os.path.basename(filepath)}")
+        self.report({'INFO'}, f"Exported Teach Data → {filename}")
         return {'FINISHED'}
 
 # ──────────────────────────────────────────────────────────────   
@@ -444,75 +446,42 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
             return {'CANCELLED'}
 
         bones = get_BONES()
-        axes = get_AXES()
-        dof = len(bones)
+        axes  = get_AXES()
+        cfg   = ROBOT_CONFIGS.get(p.robot_type.lower(), {})
+        stages = cfg.get("stage_joints", [])
 
-        robot_key = p.robot_type.lower()
-        config = ROBOT_CONFIGS.get(robot_key, {})
-        stage_joints = config.get("stage_joints", [])
-
-        frame_start = ctx.scene.frame_start
-        frame_end = ctx.scene.frame_end
-        frames = list(range(frame_start, frame_end + 1))
+        frame_start = ctx.scene.frame_start if p.frame_all else p.frame_start
+        frame_end   = ctx.scene.frame_end   if p.frame_all else p.frame_end
+        frames = list(range(frame_start, frame_end+1))
 
         headers = ["frame"]
-
-        for i in range(dof):
-            if i < len(p.show_plot_joints) and p.show_plot_joints[i]:
-                headers.append(f"j{i+1}")
-
-        for i, sj in enumerate(stage_joints):
-            idx = dof + i
-            if idx < len(p.show_plot_joints) and p.show_plot_joints[idx]:
-                label = sj[1] if len(sj) > 1 else f"stage_{i}"
-                headers.append(label)
+        if p.export_robot_all:
+            headers += [f"j{i+1}" for i in range(len(bones))]
+        for i, sj in enumerate(stages):
+            if i < len(p.show_plot_stage_joints) and p.show_plot_stage_joints[i]:
+                headers.append(sj[1])
 
         data = []
         for f in frames:
-            bpy.context.scene.frame_set(f)
+            ctx.scene.frame_set(f)
             row = [f]
-
-            for i, bname in enumerate(bones):
-                if i >= len(p.show_plot_joints) or not p.show_plot_joints[i]:
-                    continue
-                b = arm.pose.bones.get(bname)
-                if not b:
-                    row.append(0)
-                    continue
-
-                axis = axes[i]
-                angle = (
-                    b.rotation_euler.to_quaternion().angle
-                    if b.rotation_mode == 'QUATERNION'
-                    else getattr(b.rotation_euler, axis)
-                )
-                row.append(round(angle, 4))
-
-            for i, sj in enumerate(stage_joints):
-                idx = dof + i
-                if idx >= len(p.show_plot_joints) or not p.show_plot_joints[idx]:
-                    continue
-
-                name = sj[0]
-                axis = sj[5]
-                joint_type = sj[6]
-                ob = bpy.data.objects.get(name)
-                if not ob:
-                    row.append(0)
-                    continue
-
-                axis_idx = {"x": 0, "y": 1, "z": 2}[axis.lower()]
-                val = (
-                    ob.location[axis_idx]
-                    if joint_type == "location"
-                    else ob.rotation_euler[axis_idx]
-                )
-                row.append(round(val, 4))
-
+            if p.export_robot_all:
+                for i, bname in enumerate(bones):
+                    b = arm.pose.bones.get(bname)
+                    axis = axes[i]
+                    val = getattr(b.rotation_euler, axis) if b else 0.0
+                    row.append(round(val,4))
+            for i, sj in enumerate(stages):
+                if i < len(p.show_plot_stage_joints) and p.show_plot_stage_joints[i]:
+                    name = sj[0]; axis = sj[5]; jtype = sj[6]
+                    ob = bpy.data.objects.get(name)
+                    idx = {"x":0,"y":1,"z":2}[axis.lower()]
+                    v = (ob.location[idx] if jtype=="location" else ob.rotation_euler[idx]) if ob else 0.0
+                    row.append(round(v,4))
             data.append(row)
 
-        filename = ctx.scene.ik_motion_props.export_joint_csv_filename
-        path = Path(bpy.path.abspath(f"//{filename}.csv"))
+        filename = p.export_joint_csv_filename
+        path = Path(bpy.path.abspath(f"//{filename}"))
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(headers)
@@ -817,6 +786,117 @@ class OBJECT_OT_toggle_tcp_bake_all(bpy.types.Operator):
         scene.bake_all_state = state  
         return {'FINISHED'}
     
+# ──────────────────────────────────────────────────────────────
+class OBJECT_OT_ShowJointGraph(bpy.types.Operator):
+    bl_idname = "rteach.show_joint_graph"
+    bl_label = "Show Joint Timeline Graph"
+    bl_description = "Plot robot & stage joint graphs filtered by UI and X-axis mode"
+
+    def execute(self, context):
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            self.report({'ERROR'}, "Matplotlib not installed: plotting unavailable")
+            return {'CANCELLED'}
+        
+        p       = context.scene.ik_motion_props
+        scene   = context.scene
+        start_f = scene.frame_start if p.frame_all else p.frame_start
+        end_f   = scene.frame_end   if p.frame_all else p.frame_end
+        span    = max(1, end_f - start_f)
+        bones   = get_BONES()
+        axes    = get_robot_axes(p.robot_type)
+        cfg     = ROBOT_CONFIGS.get(p.robot_type.lower(), {})
+        stages  = cfg.get("stage_joints", [])
+
+        # decide axis settings
+        def get_x(frames, pct):
+            if p.use_cycle:
+                return pct, "Cycle (%)", (0, 100)
+            else:
+                return frames, "Frame", (start_f, end_f)
+
+        # Robot plot
+        fig1, ax1 = plt.subplots()
+        if p.export_robot_all:
+            arm = bpy.data.objects.get(p.armature)
+            if arm and arm.animation_data and arm.animation_data.action:
+                for i, bn in enumerate(bones):
+                    axis = axes[i].lower() if i < len(axes) else 'y'
+                    idx  = {'x':0,'y':1,'z':2}[axis]
+                    fc   = arm.animation_data.action.fcurves.find(
+                        data_path=f'pose.bones["{bn}"].rotation_euler', index=idx)
+                    if not fc: continue
+                    pts = [(kp.co[0], kp.co[1]) for kp in fc.keyframe_points
+                           if start_f <= kp.co[0] <= end_f]
+                    if not pts: continue
+                    frames, vals = zip(*pts)
+                    pct    = [100.0*(f-start_f)/span for f in frames]
+                    degs   = [v*180.0/3.141592653589793 for v in vals]
+                    x_vals, xlabel, xlim = get_x(frames, pct)
+                    ax1.plot(x_vals, degs, label=f"A{i+1}")
+        x_vals, xlabel, xlim = get_x([], [])
+        ax1.set(xlabel=xlabel, ylabel="angle (deg)", title="Robot Joints", xlim=xlim)
+        if p.export_robot_all:
+            limits = get_joint_limits(p.robot_type)
+            mins = [limits[i][0] for i in range(len(bones))]
+            maxs = [limits[i][1] for i in range(len(bones))]
+            ax1.set_ylim(min(mins), max(maxs))
+        ax1.legend(loc="upper right")
+        path1 = os.path.join(tempfile.gettempdir(), "rteach_robot_graph.png")
+        fig1.savefig(path1); plt.close(fig1)
+
+        # Stage plot
+        fig2, ax2 = plt.subplots(); axR = ax2.twinx()
+        for i, sj in enumerate(stages):
+            if i >= len(p.show_plot_stage_joints) or not p.show_plot_stage_joints[i]:
+                continue
+            name, _, _, _, _, axis, jtype = sj
+            label = name.replace("joint_", "")
+            obj   = bpy.data.objects.get(name)
+            idx   = {'x':0,'y':1,'z':2}[axis.lower()]
+            path_str = "location" if jtype=="location" else "rotation_euler"
+            vals = []
+            if obj and obj.animation_data and obj.animation_data.action:
+                fc = obj.animation_data.action.fcurves.find(data_path=path_str, index=idx)
+                if fc:
+                    vals = [(kp.co[0], kp.co[1]) for kp in fc.keyframe_points
+                            if start_f <= kp.co[0] <= end_f]
+            if not vals:
+                v0 = getattr(obj, path_str)[idx] if obj else 0.0
+                vals = [(start_f, v0), (end_f, v0)]
+            if vals[0][0] > start_f: vals.insert(0, (start_f, vals[0][1]))
+            if vals[-1][0] < end_f:  vals.append((end_f, vals[-1][1]))
+            frames, raw = zip(*sorted(vals, key=lambda x: x[0]))
+            pct = [100.0*(f-start_f)/span for f in frames]
+            x_vals, xlabel, xlim = get_x(frames, pct)
+            if jtype=="location":
+                mm = [v*1000 for v in raw]; ax2.plot(x_vals, mm, '-', label=label)
+            else:
+                dg = [v*180.0/3.141592653589793 for v in raw]; axR.plot(x_vals, dg, ':', label=label)
+
+        ax2.set(xlabel=xlabel, ylabel="location (mm)", title="Stage Joints", xlim=xlim)
+        axR.set_ylabel("angle (deg)")
+        lines, labs = ax2.get_legend_handles_labels()
+        l2, lab2    = axR.get_legend_handles_labels()
+        ax2.legend(lines+l2, labs+lab2, loc="upper right")
+        path2 = os.path.join(tempfile.gettempdir(), "rteach_stage_graph.png")
+        fig2.savefig(path2); plt.close(fig2)
+
+        # display
+        editors = [a for a in context.screen.areas if a.type=='IMAGE_EDITOR']
+        for idx, path in enumerate((path1, path2)):
+            if idx < len(editors):
+                area = editors[idx]; region = next(r for r in area.regions if r.type=='WINDOW')
+                ov = context.copy(); ov.update(area=area, region=region)
+                bpy.ops.image.open(ov, filepath=path)
+            else:
+                if sys.platform.startswith('win'): os.startfile(path)
+                elif sys.platform=='darwin':      os.system(f'open "{path}"')
+                else:                             os.system(f'xdg-open "{path}"')
+
+        return {'FINISHED'}
+
 # ──────────────────────────────────────────────────────────────   
 classes = (
     OBJECT_OT_clear_path_visuals,
@@ -842,4 +922,5 @@ classes = (
     OBJECT_OT_clear_dynamic_parent,
     OBJECT_OT_tcp_bake_select_all,
     OBJECT_OT_toggle_tcp_bake_all,
+    OBJECT_OT_ShowJointGraph,
 )
