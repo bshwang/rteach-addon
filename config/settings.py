@@ -1,14 +1,13 @@
-import os
 import bpy
 import json
 import math
 from rteach.core.core import apply_solution
+from rteach.core.robot_presets import ROBOT_CONFIGS
 
 class TcpItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="TCP Name")  
 
 def update_ik_index_preview(self, ctx):
-    import math
     p   = ctx.scene.ik_motion_props
     arm = bpy.data.objects.get(p.armature)
 
@@ -25,7 +24,6 @@ def update_ik_index_preview(self, ctx):
     print(f"[IK_PREVIEW] Apply idx {idx}: "
           f"{[round(math.degrees(a),2) for a in q_sel]}")
 
-    from rteach.core.core import apply_solution
     apply_solution(arm, q_sel, ctx.scene.frame_current, insert_keyframe=False)
     p.current_index = idx
 
@@ -292,13 +290,37 @@ class IKMotionProperties(bpy.types.PropertyGroup):
 
     export_teach_filename: bpy.props.StringProperty(
         name="Export Filename",
-        default="export_teachpoint",
-        description="Filename for Teach Data export (without extension)"
+        default="export_teachpoint.json",
+        description="Filename for Teach Data export (include extension, e.g. .json)"
     )
     export_joint_csv_filename: bpy.props.StringProperty(
         name="CSV Filename",
-        default="export_timeline",
-        description="Filename for Joint CSV export (without extension)"
+        default="export_timeline.csv",
+        description="Filename for Joint CSV export (include extension, e.g. .csv)"
+    )
+
+    export_robot_all: bpy.props.BoolProperty(
+        name="Robot", description="Include robot joints", default=True)
+
+    show_plot_stage_joints: bpy.props.BoolVectorProperty(
+        name="Stage Joints",
+        size=8,
+        description="Which stage joints to include",
+        default=(True,)*8
+    )
+    
+    xaxis_mode: bpy.props.EnumProperty(
+        name="X-Axis",
+        items=[
+            ('FRAME', "Frame", "Use frame number on X-Axis"),
+            ('CYCLE', "Cycle (%)", "Use normalized cycle percent on X-Axis"),
+        ],
+        default='CYCLE',
+    )
+    use_cycle: bpy.props.BoolProperty(
+        name="Cycle (%)",
+        description="Toggle X-axis between Frame and Cycle",
+        default=False
     )
     path_goals: bpy.props.CollectionProperty(type=PathItem)
     show_io: bpy.props.BoolProperty(name="Show Import/Export", default=True)
@@ -336,6 +358,12 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         description="If enabled, record will overwrite the selected TCP point",
         default=False
     )
+    frame_start: bpy.props.IntProperty(
+        name="Start", description="Start frame for graph", default=1, min=1)
+    frame_end: bpy.props.IntProperty(
+        name="End", description="End frame for graph", default=250, min=1)
+    frame_all: bpy.props.BoolProperty(
+        name="All", description="Use entire frame range", default=False)
 
     @property
     def solutions(self):
