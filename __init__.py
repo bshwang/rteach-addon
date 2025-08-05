@@ -23,8 +23,7 @@ from rteach.ops.ops_teach_sub import classes as sub_classes
 from rteach.ops.ops_teach_util import classes as util_classes
 from rteach.ui.ui_panel import classes as ui_classes
 from rteach.ops.ops_import_system import OBJECT_OT_import_robot_system
-from rteach.ui import ui_pie
-from rteach.ui import ui_overlay
+from rteach.ui import ui_pie, ui_overlay
 
 from rteach.config.settings import IKMotionProperties, TcpItem, PathItem
 from rteach.config.settings_static import JogProperties, StageJogProperties
