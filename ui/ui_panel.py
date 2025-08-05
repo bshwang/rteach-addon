@@ -1,11 +1,13 @@
-import os
 import bpy
+import os
 
-from bpy.utils import previews
-from rteach.core.core import get_BONES, get_joint_limits
-from rteach.core.robot_presets import ROBOT_CONFIGS
 import rteach.core.core_ur as core_ur
 import rteach.core.core_iiwa as core_iiwa
+
+from bpy.utils import previews
+from rteach.core.core import get_BONES
+from rteach.config.settings_static  import get_joint_limits
+from rteach.core.robot_presets import ROBOT_CONFIGS
 
 preview_collections = {}
 
@@ -242,7 +244,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
 
         jog = ctx.scene.jog_props
         bones = get_BONES()
-        limits = get_joint_limits()
+        limits = get_joint_limits(p.robot_type)
         
         expected_dof = len(bones)
         actual_props = [k for k in dir(jog) if k.startswith("joint_")]
@@ -450,33 +452,63 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
                 row.operator("object.focus_stage_joint", text="", icon='RESTRICT_SELECT_OFF').name = key
             else:
                 box.label(text=f"⚠ Missing: {key}")
-            
-    def draw_io_section(self, L, ctx):
+
+    def draw_io_section(self, layout, context):
         prefs = get_addon_prefs()
         if not prefs.show_io:
             return
-        p = ctx.scene.ik_motion_props
+        p = context.scene.ik_motion_props
 
-        box = L.box()
+        box = layout.box()
         row = box.row()
         icon = 'TRIA_DOWN' if p.show_io else 'TRIA_RIGHT'
         row.prop(p, "show_io", icon=icon, text="Import / Export", emboss=False)
         if not p.show_io:
             return
 
-        # ── JSON Export ──
-        json_box = box.box()
-        json_box.label(text="🔸 Export Teach Data (JSON)")
-        row = json_box.row(align=True)
-        row.prop(p, "export_teach_filename", text="")
-        row.operator("object.export_teach_data", text="", icon='EXPORT')
+        # Frame Range
+        box.label(text="🔸 Frame Range")
+        row = box.row()
+        split = row.split(factor=0.8)
+        sub = split.row(align=True)
+        sub.enabled = not p.frame_all
+        sub.prop(p, "frame_start", text="Start")
+        sub.prop(p, "frame_end",   text="End")
+        split.prop(p, "frame_all", text="All", toggle=True)
 
-        # ── CSV Export ──
-        csv_box = box.box()
-        csv_box.label(text="🔸 Export Time-Series Data (CSV)")
-        row = csv_box.row(align=True)
-        row.prop(p, "export_joint_csv_filename", text="")
-        row.operator("object.export_joint_graph_csv", text="", icon='EXPORT')
+        # Joint Selection
+        box.separator()
+        box.label(text="🔸 Joint Selection")
+        grid = box.grid_flow(columns=4, align=True)
+        grid.prop(p, "export_robot_all", text="Robot")
+        cfg = ROBOT_CONFIGS.get(p.robot_type.lower(), {})
+        for i, sj in enumerate(cfg.get("stage_joints", [])):
+            grid.prop(p, "show_plot_stage_joints", index=i, text=sj[1])
+
+        # Export Data
+        box.separator()
+        box.label(text="🔸 Export Data")
+        row = box.row()
+        split = row.split(factor=0.6)
+        try:
+            import matplotlib.pyplot
+            split.operator("rteach.show_joint_graph", text="Plot Graph", icon='IMAGE_DATA')
+        except ImportError:
+            split.enabled = False
+            split.label(icon='ERROR', text="Plot Graph (requires matplotlib)")
+        split.prop(p, "use_cycle", text="Cycle (%)")
+        # Teach Point (JSON)
+        box.label(text="Teach point (JSON)")
+        row = box.row(align=True)
+        split = row.split(factor=0.7)
+        split.prop(p, "export_teach_filename", text="")
+        split.operator("object.export_teach_data", text="", icon='EXPORT')
+        # Time-Series Data (CSV)
+        box.label(text="Time-series data (CSV)")
+        row = box.row(align=True)
+        split = row.split(factor=0.7)
+        split.prop(p, "export_joint_csv_filename", text="")
+        split.operator("object.export_joint_graph_csv", text="", icon='EXPORT')
 
 classes = [
     UI_UL_tcp_list,
