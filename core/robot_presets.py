@@ -59,8 +59,8 @@ ROBOT_CONFIGS = {
     "prb_beta": {
         "armature_type": "KUKA",
         "armature_solver_map": {
-            "KUKA_L_Arm": "iiwa14",
-            "KUKA_R_Arm": "iiwa14"
+            "KUKA_iiwa14_L_Arm": "iiwa14",
+            "KUKA_iiwa14_R_Arm": "iiwa14"
         },
         "armature_sets": {
             "KUKA_L_Arm": {
