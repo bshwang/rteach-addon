@@ -355,7 +355,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         else:
             row.label(text="None")
         
-        if "iiwa" in p.armature.lower():
+        if "kuka" in p.armature.lower():
             row = box.row(align=True)
             row.label(text="R angle (q3)")
             sub = row.row()
@@ -509,6 +509,12 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         split = row.split(factor=0.7)
         split.prop(p, "export_joint_csv_filename", text="")
         split.operator("object.export_joint_graph_csv", text="", icon='EXPORT')
+        
+        box.separator()
+        box.label(text="🔸 Import Waypoint Data (JSON)")
+        box.prop(p, "export_teach_filename", text="Filename")
+        box.operator("object.import_teach_data", text="Import")
+
 
 classes = [
     UI_UL_tcp_list,
