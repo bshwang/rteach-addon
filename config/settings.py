@@ -54,7 +54,7 @@ class IKMotionProperties(bpy.types.PropertyGroup):
 
     tcp_sorted_list: bpy.props.CollectionProperty(type=TcpItem)
     tcp_list_index: bpy.props.IntProperty(name="Selected TCP Index", default=0)
-
+    
     selected_teach_point: bpy.props.PointerProperty(
         name="Teach Point",
         type=bpy.types.Object,
@@ -308,7 +308,7 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         description="Which stage joints to include",
         default=(True,)*8
     )
-    
+
     xaxis_mode: bpy.props.EnumProperty(
         name="X-Axis",
         items=[
