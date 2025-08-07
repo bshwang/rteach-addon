@@ -11,8 +11,9 @@ from rteach.core.core import (
     get_BONES, get_AXES, get_best_ik_solution, get_joint_limits
 )
 from rteach.core.core_iiwa import linear_move
-from rteach.ops.ops_teach_util import update_tcp_sorted_list
+from rteach.ops.ops_teach_util import update_tcp_sorted_list, find_object_by_prefix
 from rteach.ops.ops_teach_main import get_best_ik_solution, apply_solution
+from rteach.core.robot_presets import ROBOT_CONFIGS
 
 # ──────────────────────────────────────────────────────────────
 class OBJECT_OT_teach_pose(bpy.types.Operator):
@@ -280,8 +281,27 @@ class OBJECT_OT_record_tcp_point(bpy.types.Operator):
         if coll.name not in {c.name for c in ctx.scene.collection.children}:
             ctx.scene.collection.children.link(coll)
 
-        new_idx = len([o for o in bpy.data.objects if o.name.startswith("P.")])
-        dup = bpy.data.objects.new(name=f"P.{new_idx:03d}", object_data=tgt.data)
+        # goal label
+        goal_label = tgt.get("goal", "").strip()
+        if not goal_label:
+            goal_label = "GOAL"
+
+        # count seq for this goal
+        same_goal_objs = [o for o in coll.objects if o.get("goal", "").strip() == goal_label]
+        goal_seq = len(same_goal_objs) + 1
+
+        # suffix: Left or Right
+        rob_key = p.robot_type.lower()
+        if "left" in rob_key:
+            suffix = "L"
+        elif "right" in rob_key:
+            suffix = "R"
+        else:
+            suffix = "X"
+
+        name = f"{goal_label}_{goal_seq:02d}_{suffix}"
+
+        dup = bpy.data.objects.new(name=name, object_data=tgt.data)
 
         if "_RNA_UI" not in dup:
             dup["_RNA_UI"] = {}
@@ -289,18 +309,17 @@ class OBJECT_OT_record_tcp_point(bpy.types.Operator):
         dup["_RNA_UI"]["wait_time_sec"] = {"min": 0.0, "max": 10.0, "soft_min": 0.0, "soft_max": 10.0}
 
         dup.matrix_world = tgt.matrix_world
-        dup["index"] = new_idx
+        dup["index"] = len([o for o in bpy.data.objects if o.name.startswith("P.")])
         dup["motion_type"] = "LINEAR"
         dup["fixed_q3"] = p.fixed_q3
         dup["speed"] = p.motion_speed
         dup["wait_time_sec"] = p.wait_time_sec
         dup["bake_enabled"] = True
+        dup["robot"] = p.robot_type
         dup.show_name = True
-        dup["goal"] = ""
+        dup["goal"] = goal_label
 
-        if "_RNA_UI" not in dup:
-            dup["_RNA_UI"] = {}
-        dup["_RNA_UI"]["goal"] = {"description":"Teach point goal name"}
+        dup["_RNA_UI"]["goal"] = {"description": "Teach point goal name"}
 
         if p.solutions and len(p.solutions) > p.current_index:
             q_safe = [float(v) for v in p.solutions[p.current_index]]
@@ -311,14 +330,15 @@ class OBJECT_OT_record_tcp_point(bpy.types.Operator):
 
         prev_solutions = p.solutions[:]
         prev_idx       = p.current_index
-        update_tcp_sorted_list()                
-        p.solutions      = prev_solutions       
-        p.current_index  = prev_idx
+        update_tcp_sorted_list()
+        p.solutions     = prev_solutions
+        p.current_index = prev_idx
 
         p.selected_teach_point = dup
         p.tcp_list_index       = len(p.tcp_sorted_list) - 1
         p.solution_index_ui    = p.current_index + 1
 
+        self.report({'INFO'}, f"Recorded: {name}")
         return {'FINISHED'}
 
 # ──────────────────────────────────────────────────────────────
@@ -539,6 +559,20 @@ class OBJECT_OT_update_tcp_pose(bpy.types.Operator):
 
         import numpy as np
         from rteach.core.robot_state import get_armature_type
+
+        tgt.matrix_world = obj.matrix_world.copy()
+
+        q = tgt.matrix_world.to_quaternion()
+        T_goal = np.eye(4)
+        T_goal[:3, :3] = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
+        T_goal[:3, 3] = np.array(tgt.matrix_world.to_translation())
+
+        q_ref = np.asarray(obj.get("joint_pose", []), float)
+
+        if get_armature_type(p.robot_type) == "KUKA" and q_ref.size >= 3:
+            p.fixed_q3 = float(q_ref[2])
+            print(f"→ Pre-set fixed_q3 from joint_pose: {math.degrees(p.fixed_q3):.2f}°")
+
         moved = not np.allclose(
             np.array(obj.matrix_world),
             np.array(tgt.matrix_world),
@@ -554,14 +588,7 @@ class OBJECT_OT_update_tcp_pose(bpy.types.Operator):
 
         if moved or fixed_q3_changed:
             print("→ Mode: IK update from TCP → Gizmo")
-            tgt.matrix_world = obj.matrix_world.copy()
 
-            q = tgt.matrix_world.to_quaternion()
-            T_goal = np.eye(4)
-            T_goal[:3, :3] = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
-            T_goal[:3, 3] = np.array(tgt.matrix_world.to_translation())
-
-            q_ref = np.asarray(obj.get("joint_pose", []), float)
             if q_ref.size > 0:
                 q_sel, sols = get_best_ik_solution(p, T_goal, q_ref=q_ref)
             else:
@@ -630,30 +657,52 @@ class OBJECT_OT_update_tcp_pose(bpy.types.Operator):
 
         print("✔ [UPDATE TCP] Done")
         return {'FINISHED'}
-  
+
 # ────────────────────────────────────────────────────────────── 
+def get_robot_mapping(ctx=None) -> dict:
+    if ctx is None:
+        ctx = bpy.context
+    return ctx.scene.get("robot_mapping", {})
+
 class OBJECT_OT_update_all_tcp_poses(bpy.types.Operator):
     bl_idname = "object.update_all_tcp_poses"
     bl_label  = "Update All TCPs"
 
     def execute(self, ctx):
         p = ctx.scene.ik_motion_props
+        current_armature_name = p.armature
+        robot_mapping = get_robot_mapping(ctx)
+
+        matched_robot_key = None
+        for rob_key, arm_name in robot_mapping.items():
+            if arm_name == current_armature_name:
+                matched_robot_key = rob_key
+                break
+
+        if not matched_robot_key:
+            self.report({'ERROR'}, f"Current armature '{current_armature_name}' not mapped in robot_mapping")
+            return {'CANCELLED'}
+
+        print(f"[RECOMPUTE] Active armature: {current_armature_name} → matched robot_key: {matched_robot_key}")
 
         for idx, tp in enumerate(p.tcp_sorted_list):
-            # TcpItem → 실제 Object 로 변환
             obj = bpy.data.objects.get(tp.name)
             if not obj:
-                self.report({'WARNING'}, f"TCP '{tp.name}' not found, skip")
                 continue
 
-            # UI 패널 기준 선택 변경
-            p.selected_teach_point = obj
-            p.tcp_list_index       = idx
+            if not obj.get("bake_enabled", True):
+                continue
 
-            # 각 TCP 에 대해 Update 로직 호출
-            # name 파라미터로 obj.name 을 넘기면, 내부에서 selected_teach_point 대신 사용됨
+            if obj.get("robot_key", "") != matched_robot_key:
+                continue
+
+            print(f"[RECOMPUTE] {idx+1:02}: {obj.name}")
+            p.selected_teach_point = obj
+            p.tcp_list_index = idx
+
             bpy.ops.object.update_tcp_pose(name=obj.name)
 
+        self.report({'INFO'}, f"Updated TCPs for robot_key: {matched_robot_key}")
         return {'FINISHED'}
 
 # ────────────────────────────────────────────────────────────── 
@@ -910,41 +959,6 @@ class OBJECT_OT_record_tcp_from_jog(bpy.types.Operator):
         p.status_text = "TCP recorded from Jog (FK pose)"
         return {'FINISHED'}
     
-# ──────────────────────────────────────────────────────────────   
-class OBJECT_OT_recompute_selected_tcp(bpy.types.Operator):
-    bl_idname = "object.recompute_selected_tcp"
-    bl_label = "Update IK from Location"
-    bl_description = "Recompute joint_pose/fixed_q3 for selected TCPs based on current transform"
-
-    def execute(self, ctx):
-        p = ctx.scene.ik_motion_props
-        arm = bpy.data.objects.get(p.armature)
-        if not arm:
-            self.report({'ERROR'}, "Armature not found")
-            return {'CANCELLED'}
-
-        count = 0
-        for obj in ctx.selected_objects:
-            if not obj.name.startswith("P."):
-                continue
-
-            T_goal = np.array(obj.matrix_world)
-            q_sel, sols = get_best_ik_solution(p, T_goal)
-            if not sols:
-                self.report({'WARNING'}, f"IK failed: {obj.name}")
-                continue
-
-            obj["joint_pose"] = q_sel.tolist()
-            obj["solution_index"] = sols.index(q_sel) if q_sel in sols else 0
-
-            if get_armature_type(p.robot_type) == "KUKA":
-                obj["fixed_q3"] = q_sel[2]
-
-            count += 1
-
-        self.report({'INFO'}, f"Updated {count} TCPs from current position")
-        return {'FINISHED'}
-    
 # ──────────────────────────────────────────────────────────────    
 class OBJECT_OT_preview_goal_pose(bpy.types.Operator):
     bl_idname = "object.preview_goal_pose"
@@ -1040,7 +1054,6 @@ classes = (
     OBJECT_OT_apply_global_speed,
     OBJECT_OT_tcp_list_select,
     OBJECT_OT_record_tcp_from_jog,
-    OBJECT_OT_recompute_selected_tcp,
     OBJECT_OT_preview_goal_pose,
     OBJECT_OT_record_goal_pose,
     OBJECT_OT_preview_tcp_prev_pose,
