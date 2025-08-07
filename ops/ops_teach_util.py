@@ -8,7 +8,7 @@ import tempfile, os, sys
 import numpy as np
 
 from pathlib import Path
-from mathutils import Vector
+from mathutils import Matrix, Vector, Quaternion
 from rteach.core.robot_presets import ROBOT_CONFIGS
 from rteach.core.core import get_forward_kinematics, get_BONES, get_AXES
 from rteach.config.settings import delayed_workspace_update
@@ -375,60 +375,110 @@ class OBJECT_OT_export_teach_data(bpy.types.Operator):
     bl_label  = "Export Teach Data (.json)"
 
     def execute(self, ctx):
+
         p       = ctx.scene.ik_motion_props
         arm_obj = bpy.data.objects.get(p.armature)
         coll    = bpy.data.collections.get("Teach data")
+
         if not arm_obj or not coll:
             self.report({'ERROR'}, "Armature or Teach data missing")
             return {'CANCELLED'}
 
         inv = arm_obj.matrix_world.inverted()
-        tps = sorted(coll.objects, key=lambda o: o.get("seq",0))
+        tps = sorted(coll.objects, key=lambda o: o.get("seq", 0))
 
-        data = []
-        prev_tp = None
-        for tp in tps:
-            if not prev_tp:
-                prev_tp = tp
+        robot_mapping = {}
+        print("[EXPORT] Building RobotMapping...")
+
+        for obj in tps:
+            rob_key = obj.get("robot_key", "") or obj.get("robot", "")
+            if not rob_key:
+                print(f"[WARN] TCP '{obj.name}' has no 'robot_key'")
+                continue
+            if rob_key in robot_mapping:
                 continue
 
-            def make_point(obj):
-                mat   = inv @ obj.matrix_world
-                pos   = mat.to_translation()
-                quat  = mat.to_quaternion()
-                qp    = obj.get("joint_pose", [])
-                pt    = {}
-                for i, v in enumerate(qp):
-                    pt[f"A{i+1}"] = round(v, 6)
-                mt = obj.get("motion_type", "JOINT")
-                pt["MoveType"] = "PTP" if mt=="JOINT" else "LIN"
-                pt["QW"]       = round(quat.w, 6)
-                pt["QX"]       = round(quat.x, 6)
-                pt["QY"]       = round(quat.y, 6)
-                pt["QZ"]       = round(quat.z, 6)
-                pt["X"]        = round(pos.x, 6)
-                pt["Y"]        = round(pos.y, 6)
-                pt["Z"]        = round(pos.z, 6)
-                return pt
+            base = obj.find_armature()
+            if not base:
+                guess = rob_key.lower()
+                base = next(
+                    (obj for obj in bpy.data.objects
+                     if obj.type == 'ARMATURE' and obj.name.lower().startswith(guess)),
+                    None
+                )
+                if base:
+                    print(f"[INFO] Found armature '{guess}' for robot key '{rob_key}'")
+                else:
+                    print(f"[FAIL] No armature found for robot '{rob_key}' → Tried: '{guess}'")
+
+            if base:
+                robot_mapping[rob_key] = base.name
+            else:
+                print(f"[WARN] TCP '{obj.name}' has robot '{rob_key}' but no armature resolved")
+
+        task_dict = {}
+
+        def make_point(obj):
+            mat  = inv @ obj.matrix_world
+            pos  = mat.to_translation()
+            quat = mat.to_quaternion()
+            qp   = obj.get("joint_pose", [])
+            pt   = {}
+
+            if not qp:
+                print(f"[WARN] TCP '{obj.name}' has no joint_pose data")
+
+            for i, v in enumerate(qp):
+                pt[f"A{i+1}"] = round(v, 6)
+
+            mt = obj.get("motion_type", "JOINT")
+            pt["MoveType"] = "PTP" if mt == "JOINT" else "LIN"
+            pt["QW"] = round(quat.w, 6)
+            pt["QX"] = round(quat.x, 6)
+            pt["QY"] = round(quat.y, 6)
+            pt["QZ"] = round(quat.z, 6)
+            pt["X"]  = round(pos.x, 6)
+            pt["Y"]  = round(pos.y, 6)
+            pt["Z"]  = round(pos.z, 6)
+            return pt
+
+        for i in range(1, len(tps)):
+            prev_tp = tps[i - 1]
+            tp      = tps[i]
 
             start_pt  = make_point(prev_tp)
             goal_pt   = make_point(tp)
-            path_name = f"FROM_{prev_tp['goal']}_TO_{tp['goal']}"
 
-            data.append({
-                "Path":   path_name,
-                "Points": [
-                    {"StartPoint": start_pt, "GoalPoint": goal_pt}
-                ],
-                "Robot": arm_obj.name
+            path_name = f"FROM_{prev_tp.get('goal', '')}_TO_{tp.get('goal', '')}"
+            rob_key   = tp.get("robot_key", "") or tp.get("robot", "")
+
+            if not rob_key:
+                print(f"[WARN] TCP '{tp.name}' has no robot key — fallback to armature")
+
+            task_dict.setdefault(path_name, {
+                "Path": path_name,
+                "Points": [],
+                "Robot": rob_key or arm_obj.name
             })
 
-            prev_tp = tp
+            task_dict[path_name]["Points"].append({
+                "StartPoint": start_pt,
+                "GoalPoint":  goal_pt
+            })
+
+        full_data = {
+            "RobotMapping": robot_mapping,
+            "Task": list(task_dict.values())
+        }
 
         filename = p.export_teach_filename
         filepath = bpy.path.abspath(f"//{filename}")
         with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+            json.dump(full_data, f, indent=2)
+
+        print(f"[EXPORT] Exported Teach Data to: {filepath}")
+        print(f"[EXPORT] RobotMapping = {robot_mapping}")
+        print(f"[EXPORT] Task count = {len(full_data['Task'])}")
 
         self.report({'INFO'}, f"Exported Teach Data → {filename}")
         return {'FINISHED'}
@@ -569,10 +619,47 @@ class OBJECT_OT_refresh_tcp_list(bpy.types.Operator):
     bl_label = "Refresh TCP List"
 
     def execute(self, ctx):
-        update_tcp_sorted_list()         
-        self.report({'INFO'}, "TCP list refreshed")
+        update_tcp_sorted_list()
+
+        coll = bpy.data.collections.get("Teach data")
+        if not coll:
+            self.report({'ERROR'}, "Teach data collection not found")
+            return {'CANCELLED'}
+
+        name_counter = {}
+        all_objs = sorted(coll.objects, key=lambda o: o.get("index", 0))
+
+        print("\n===== [TCP RENAME LOG] =====")
+        for i, obj in enumerate(all_objs):
+            goal = obj.get("goal", "").strip() or "GOAL"
+            robot_key = obj.get("robot_key", "").lower()
+
+            if "left" in robot_key:
+                side = "L"
+            elif "right" in robot_key:
+                side = "R"
+            else:
+                side = "X"
+
+            key = (goal, side)
+            name_counter.setdefault(key, 0)
+            name_counter[key] += 1
+            seq = name_counter[key]
+
+            new_name = f"{goal}_{side}_{seq:02d}"
+            obj["index"] = i
+
+            if obj.name != new_name:
+                print(f"[{i+1:02}] RENAME {obj.name} → {new_name}")
+                obj.name = new_name
+            else:
+                print(f"[{i+1:02}] OK      {obj.name}")
+
+        print("===== [TCP RENAME DONE] =====\n")
+
+        self.report({'INFO'}, "TCP list refreshed, renamed, and re-indexed")
         return {'FINISHED'}
-    
+
 # ──────────────────────────────────────────────────────────────  
 class OBJECT_OT_toggle_path_visibility(bpy.types.Operator):
     bl_idname = "object.toggle_path_visibility"
@@ -897,6 +984,154 @@ class OBJECT_OT_ShowJointGraph(bpy.types.Operator):
 
         return {'FINISHED'}
 
+# ──────────────────────────────────────────────────────────────
+class OBJECT_OT_import_teach_data(bpy.types.Operator):
+    bl_idname = "object.import_teach_data"
+    bl_label = "Import Teach Data (JSON)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, ctx):
+
+        scene = ctx.scene
+        p = scene.ik_motion_props
+        json_path = Path(bpy.path.abspath(f"//{p.export_teach_filename}"))
+
+        if not json_path.exists():
+            self.report({'ERROR'}, f"File not found: {json_path.name}")
+            return {'CANCELLED'}
+
+        print(f"[DEBUG] Importing teach data from: {json_path}")
+        with open(json_path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+
+        if isinstance(raw, dict):
+            robot_mapping = raw.get("RobotMapping", {})
+            segments = raw.get("Task", [])
+            
+            if robot_mapping:
+                ctx.scene["robot_mapping"] = robot_mapping 
+                print(f"[IMPORT] Robot mapping loaded: {robot_mapping}")
+
+            else:
+                ctx.scene["robot_mapping"] = {}
+                print("[IMPORT] No robot mapping found")
+
+        elif isinstance(raw, list):
+            robot_mapping = {}
+            segments = raw
+        else:
+            self.report({'ERROR'}, "Unrecognized JSON format")
+            return {'CANCELLED'}
+
+        teach_coll = bpy.data.collections.get("Teach data")
+        if not teach_coll:
+            teach_coll = bpy.data.collections.new("Teach data")
+            ctx.scene.collection.children.link(teach_coll)
+
+        src = bpy.data.objects.get("Target_Gizmo") or bpy.data.objects.get("TCP_Gizmo")
+        if not src:
+            self.report({'ERROR'}, "Reference gizmo (Target_Gizmo or TCP_Gizmo) not found")
+            return {'CANCELLED'}
+
+        arm_name_to_base_location = {}
+        for rob_key, arm_name in robot_mapping.items():
+            arm = bpy.data.objects.get(arm_name)
+            if arm:
+                arm_name_to_base_location[rob_key] = arm.matrix_world.translation.copy()
+            else:
+                print(f"[WARN] Robot base not found in Blender: {rob_key} → {arm_name}")
+
+        def side_from_key(key: str) -> str:
+            key = key.lower()
+            if "left" in key:
+                return "L"
+            elif "right" in key:
+                return "R"
+            return "X"
+
+        label_counter = {}
+        generated_tcp = set()
+        goal_history = set()
+
+        def add_tcp_point(pt_data, label, rob_key, is_goal):
+            side = side_from_key(rob_key)
+            key = (label, side)
+
+            if is_goal or key not in goal_history:
+                goal_history.add(key)
+                label_counter[key] = label_counter.get(key, 0) + 1
+                seq = label_counter[key]
+                name = f"{label}_{side}_{seq:02}"
+
+                loc = Vector((pt_data["X"], pt_data["Y"], pt_data["Z"])) + arm_name_to_base_location[rob_key]
+                rot = Quaternion((pt_data["QW"], pt_data["QX"], pt_data["QY"], pt_data["QZ"]))
+                move_type = pt_data.get("MoveType", "PTP").upper()
+                motion_type = "JOINT" if move_type == "PTP" else "LINEAR"
+
+                print(f"[DEBUG] Creating {name} from robot={rob_key}")
+                print(f"  Goal     = {label}")
+                print(f"  Side     = {side}")
+                print(f"  Raw loc  = {pt_data['X'], pt_data['Y'], pt_data['Z']}")
+                print(f"  Offset   = {arm_name_to_base_location[rob_key][:]}")
+                print(f"  Final loc= {loc[:]}")
+                print(f"  Raw rot (quat)  = {rot[:]}")
+                print(f"  Motion   = {motion_type}")
+
+                obj = src.copy()
+                obj.data = src.data.copy() if src.data else None
+                obj.name = name
+                obj.location = loc
+                obj.rotation_mode = 'QUATERNION'
+                obj.rotation_quaternion = rot
+                obj.show_name = True
+                obj.empty_display_size = 0.1
+
+                obj["goal"] = label
+                obj["motion_type"] = motion_type
+                obj["speed"] = pt_data.get("speed", 200.0)
+                obj["wait_time_sec"] = pt_data.get("wait_time_sec", 0.0)
+                obj["bake_enabled"] = True
+                obj["robot_key"] = rob_key
+                joint_pose = []
+                for i in range(1, 8):
+                    key = f"A{i}"
+                    if key in pt_data:
+                        joint_pose.append(pt_data[key])
+                obj["joint_pose"] = joint_pose
+
+                teach_coll.objects.link(obj)
+
+        for seg in segments:
+            pts = seg.get("Points", [])
+            rob_key = seg.get("Robot", "")
+            path = seg.get("Path", "")
+            if not rob_key or rob_key not in arm_name_to_base_location:
+                print(f"[WARN] Skipping segment with unmapped robot: {rob_key}")
+                continue
+
+            if not isinstance(pts, list):
+                continue
+
+            path_parts = path.replace("FROM_", "").split("_TO_")
+            if len(path_parts) != 2:
+                continue
+
+            label_start, label_goal = path_parts
+
+            for pt_pair in pts:
+                start = pt_pair.get("StartPoint")
+                goal = pt_pair.get("GoalPoint")
+
+                if start:
+                    add_tcp_point(start, label_start, rob_key, is_goal=False)
+                if goal:
+                    add_tcp_point(goal, label_goal, rob_key, is_goal=True)
+
+        self.report({'INFO'}, f"Imported teach data from {json_path.name}")
+        bpy.ops.object.refresh_tcp_list()
+        bpy.ops.object.update_all_tcp_poses()
+        return {'FINISHED'}
+
 # ──────────────────────────────────────────────────────────────   
 classes = (
     OBJECT_OT_clear_path_visuals,
@@ -923,4 +1158,5 @@ classes = (
     OBJECT_OT_tcp_bake_select_all,
     OBJECT_OT_toggle_tcp_bake_all,
     OBJECT_OT_ShowJointGraph,
+    OBJECT_OT_import_teach_data,
 )
