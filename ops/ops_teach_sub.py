@@ -5,12 +5,28 @@ import numpy as math
 from mathutils import Matrix, Euler
 from rteach.core.robot_state import get_armature_type
 from rteach.core.core import (
-    compute_base_matrix, compute_tcp_offset_matrix, get_forward_kinematics, get_BONES, get_AXES, 
+    compute_base_matrix, compute_tcp_offset_matrix, get_forward_kinematics, get_BONES, get_AXES, get_robot_config
 )
 from rteach.ops.ops_teach_util import find_object_by_prefix
 from rteach.config import settings_static as ss
 from rteach.core.robot_presets import ROBOT_CONFIGS
     
+def find_object_by_prefix(name: str) -> bpy.types.Object | None:
+    """
+    Find best matching object whose name starts with `name`,
+    preferring the one with the highest numeric suffix (e.g., .002 > .001 > none).
+    """
+    def extract_suffix_index(n):
+        match = re.match(rf"^{re.escape(name)}(?:\.(\d+))?$", n)
+        return int(match.group(1)) if match and match.group(1) else -1
+
+    matches = [obj for obj in bpy.data.objects if obj.name.startswith(name)]
+    if not matches:
+        return None
+
+    best = max(matches, key=lambda obj: extract_suffix_index(obj.name))
+    return best
+
 # ──────────────────────────────────────────────────────────────    
 class OBJECT_OT_keyframe_joint_pose(bpy.types.Operator):
     bl_idname = "object.keyframe_joint_pose"
@@ -365,6 +381,179 @@ class OBJECT_OT_snap_target_to_fk(bpy.types.Operator):
         return {'FINISHED'}
     
 # ──────────────────────────────────────────────────────────────    
+class OBJECT_OT_add_stage_tcp_point(bpy.types.Operator):
+    bl_idname = "object.add_stage_tcp_point"
+    bl_label = "Add Stage TCP Point"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, ctx):
+        p = ctx.scene.ik_motion_props
+        robot_key = p.robot_type
+        config = get_robot_config()
+        stage = config.get("stage", [])
+
+        if not stage:
+            self.report({'ERROR'}, f"No stage joints found for robot_key: {robot_key}")
+            return {'CANCELLED'}
+
+        joint_values = []
+        for j in stage:
+            val = j.get("default", 0.0)
+            joint_values.append(val)
+
+        name_base = "STAGE"
+        existing = [o.name for o in bpy.data.objects if o.name.startswith(name_base)]
+        i = 1
+        while f"{name_base}_{i:02}" in existing:
+            i += 1
+        name = f"{name_base}_{i:02}"
+
+        obj = bpy.data.objects.new(name, None)
+        obj.empty_display_type = 'PLAIN_AXES'
+        obj.empty_display_size = 0.1
+        obj["stage"] = True
+        obj["robot_key"] = robot_key
+        obj["joint_values"] = joint_values
+
+        ctx.scene.collection.objects.link(obj)
+        return {'FINISHED'}
+
+# ────────────────────────────────────────────────────────────── 
+def update_stage_tcp_sorted_list():
+    p = bpy.context.scene.ik_motion_props
+    coll = bpy.data.collections.get("Teach data")
+    if not coll:
+        p.stage_tcp_sorted_list.clear()
+        p.selected_stage_tcp = None
+        p.stage_tcp_list_index = -1
+        return
+
+    p.stage_tcp_sorted_list.clear()
+
+    for obj in sorted(coll.objects, key=lambda o: o.get("index", 9999)):
+        if obj.name not in bpy.data.objects:
+            continue
+        if not obj.get("stage"):
+            continue  # Only include stage TCPs
+        item = p.stage_tcp_sorted_list.add()
+        item.name = obj.name
+
+    p.stage_tcp_list_index = min(p.stage_tcp_list_index, len(p.stage_tcp_sorted_list) - 1)
+
+    if p.selected_stage_tcp and p.selected_stage_tcp.name in bpy.data.objects:
+        p.selected_stage_tcp = bpy.data.objects[p.selected_stage_tcp.name]
+    else:
+        p.selected_stage_tcp = None
+
+    bpy.context.area.tag_redraw()
+
+class OBJECT_OT_refresh_stage_tcp_list(bpy.types.Operator):
+    bl_idname = "object.refresh_stage_tcp_list"
+    bl_label = "Refresh Stage TCP List"
+
+    def execute(self, ctx):
+        update_stage_tcp_sorted_list()
+
+        coll = bpy.data.collections.get("Teach data")
+        if not coll:
+            self.report({'ERROR'}, "Teach data collection not found")
+            return {'CANCELLED'}
+
+        name_counter = {}
+        stage_objs = [obj for obj in coll.objects if obj.get("stage")]
+        stage_objs = sorted(stage_objs, key=lambda o: o.get("index", 0))
+
+        print("\n===== [STAGE TCP RENAME LOG] =====")
+        for i, obj in enumerate(stage_objs):
+
+            goal = obj.get("goal", "").strip() or "GOAL"
+            robot_key = obj.get("robot_key", "").lower()
+
+            if "left" in robot_key:
+                side = "L"
+            elif "right" in robot_key:
+                side = "R"
+            else:
+                side = "S"
+
+            key = (goal, side)
+            name_counter.setdefault(key, 0)
+            name_counter[key] += 1
+            seq = name_counter[key]
+
+            new_name = f"{goal}_{side}_{seq:02d}"
+            obj["index"] = i
+
+            if obj.name != new_name:
+                print(f"[{i+1:02}] RENAME {obj.name} → {new_name}")
+                obj.name = new_name
+            else:
+                print(f"[{i+1:02}] OK      {obj.name}")
+
+        print("===== [STAGE TCP RENAME DONE] =====\n")
+
+        self.report({'INFO'}, "Stage TCP list refreshed, renamed, and re-indexed")
+        return {'FINISHED'}
+
+# ──────────────────────────────────────────────────────────────    
+class OBJECT_OT_stage_tcp_move_up(bpy.types.Operator):
+    bl_idname = "object.stage_tcp_move_up"
+    bl_label = "Move Stage TCP Up"
+
+    def execute(self, ctx):
+        p = ctx.scene.ik_motion_props
+        idx = p.stage_tcp_list_index
+        if idx > 0:
+            p.stage_tcp_sorted_list.move(idx, idx - 1)
+            p.stage_tcp_list_index -= 1
+        return {'FINISHED'}
+
+# ──────────────────────────────────────────────────────────────    
+class OBJECT_OT_stage_tcp_move_down(bpy.types.Operator):
+    bl_idname = "object.stage_tcp_move_down"
+    bl_label = "Move Stage TCP Down"
+
+    def execute(self, ctx):
+        p = ctx.scene.ik_motion_props
+        idx = p.stage_tcp_list_index
+        if idx < len(p.stage_tcp_sorted_list) - 1:
+            p.stage_tcp_sorted_list.move(idx, idx + 1)
+            p.stage_tcp_list_index += 1
+        return {'FINISHED'}
+
+# ──────────────────────────────────────────────────────────────    
+class OBJECT_OT_delete_stage_tcp_point(bpy.types.Operator):
+    bl_idname = "object.delete_stage_tcp_point"
+    bl_label = "Delete Stage TCP Point"
+
+    name: bpy.props.StringProperty()
+
+    def execute(self, ctx):
+        obj = bpy.data.objects.get(self.name)
+        if not obj:
+            self.report({'ERROR'}, f"Stage TCP '{self.name}' not found")
+            return {'CANCELLED'}
+
+        for coll in obj.users_collection:
+            coll.objects.unlink(obj)
+
+        bpy.data.objects.remove(obj, do_unlink=True)
+        ctx.scene.ik_motion_props.status_text = f"Deleted stage TCP {self.name}"
+        update_stage_tcp_sorted_list()
+        return {'FINISHED'}
+
+# ──────────────────────────────────────────────────────────────    
+class OBJECT_OT_clear_all_stage_tcp_points(bpy.types.Operator):
+    bl_idname = "object.clear_all_stage_tcp_points"
+    bl_label = "Clear All Stage TCPs"
+
+    def execute(self, ctx):
+        stage_objs = [obj for obj in bpy.data.objects if obj.get("stage") is True]
+        for obj in stage_objs:
+            bpy.data.objects.remove(obj, do_unlink=True)
+        return bpy.ops.object.refresh_stage_tcp_list()
+
+# ──────────────────────────────────────────────────────────────    
 classes = (
     OBJECT_OT_keyframe_joint_pose,
     OBJECT_OT_go_home_pose,
@@ -374,4 +563,10 @@ classes = (
     OBJECT_OT_keyframe_stage_joint,
     OBJECT_OT_focus_stage_joint,
     OBJECT_OT_snap_target_to_fk,
+    OBJECT_OT_add_stage_tcp_point,
+    OBJECT_OT_refresh_stage_tcp_list,
+    OBJECT_OT_stage_tcp_move_up,
+    OBJECT_OT_stage_tcp_move_down,
+    OBJECT_OT_delete_stage_tcp_point,
+    OBJECT_OT_clear_all_stage_tcp_points,
 )
