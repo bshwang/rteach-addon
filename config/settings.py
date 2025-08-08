@@ -7,6 +7,9 @@ from rteach.core.robot_presets import ROBOT_CONFIGS
 class TcpItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="TCP Name")  
 
+class StageTCPItem(bpy.types.PropertyGroup):
+    name: bpy.props.StringProperty()
+
 def update_ik_index_preview(self, ctx):
     p   = ctx.scene.ik_motion_props
     arm = bpy.data.objects.get(p.armature)
@@ -54,7 +57,11 @@ class IKMotionProperties(bpy.types.PropertyGroup):
 
     tcp_sorted_list: bpy.props.CollectionProperty(type=TcpItem)
     tcp_list_index: bpy.props.IntProperty(name="Selected TCP Index", default=0)
-    
+
+    stage_tcp_sorted_list: bpy.props.CollectionProperty(type=TcpItem)
+    stage_tcp_list_index: bpy.props.IntProperty(name="Selected Stage TCP Index", default=0)
+    selected_stage_tcp: bpy.props.PointerProperty(type=bpy.types.Object)
+
     selected_teach_point: bpy.props.PointerProperty(
         name="Teach Point",
         type=bpy.types.Object,
