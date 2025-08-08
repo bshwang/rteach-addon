@@ -279,3 +279,13 @@ def get_best_ik_solution(p, T_goal, q_ref=None):
 def get_tcp_object():
     p = bpy.context.scene.ik_motion_props
     return p.tcp_object if p and p.tcp_object else None
+
+def is_stage_robot_key(rob_key: str) -> bool:
+    config = ROBOT_CONFIGS.get(rob_key.lower())
+    return bool(config and config.get("stage_joints"))
+
+def get_stage_joint_names(rob_key, rob_key_to_config_key):
+    preset_key = rob_key_to_config_key.get(rob_key)
+    config = ROBOT_CONFIGS.get(preset_key, {})
+    return [joint[0] for joint in config.get("stage_joints", [])] 
+
