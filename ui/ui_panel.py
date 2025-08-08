@@ -1,11 +1,12 @@
 import bpy
 import os
+import math
 
 import rteach.core.core_ur as core_ur
 import rteach.core.core_iiwa as core_iiwa
 
 from bpy.utils import previews
-from rteach.core.core import get_BONES
+from rteach.core.core import get_BONES, get_robot_config
 from rteach.config.settings_static  import get_joint_limits
 from rteach.core.robot_presets import ROBOT_CONFIGS
 
@@ -37,6 +38,16 @@ def get_robot_preview(robot_key):
 
     return pcoll.get(robot_key)
 
+def get_stage_label_from_key(robot_key):
+    return get_robot_config().get("label", robot_key)
+
+def get_stage_joint_labels(robot_key):
+    return [j.get("label", f"Joint {i+1}") for i, j in enumerate(get_robot_config().get("stage", []))]
+
+def get_stage_joint_unit(robot_key, idx):
+    j = get_robot_config().get("stage", [])[idx]
+    return "mm" if j.get("unit") == "mm" else "deg"
+
 def get_addon_prefs():
     return bpy.context.preferences.addons["rteach"].preferences
 
@@ -67,6 +78,14 @@ class UI_UL_tcp_list(bpy.types.UIList):
                 row.prop(obj, '["bake_enabled"]', text="")  
             op = row.operator("object.tcp_list_select", text=label, emboss=False, icon='EMPTY_AXIS')
             op.index = index
+
+class UI_UL_stage_tcp_list(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        if item and item.name:
+            obj = bpy.data.objects.get(item.name)
+            base_name = obj.name if obj else item.name
+            label = f"{base_name} [#{index}]"
+            layout.label(text=label, icon='EMPTY_AXIS')
 
 def draw_robot_slide_section(layout, keys, slide_prop_name):
     if not keys:
@@ -228,7 +247,6 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.prop(p.goal_object, 'rotation_euler', index=2, text="RZ")
 
     def draw_jog_section(self, L, ctx):
-
         p = ctx.scene.ik_motion_props
         box = L.box()
         row = box.row()
@@ -284,7 +302,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         if not p.show_teach:
             return
 
-        box.label(text="🔸 Waypoint manager")
+        box.label(text="🔸 TP manager")
 
         row = box.row()
 
@@ -361,6 +379,67 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             sub = row.row()
             sub.scale_x = 1.2
             sub.prop(p, "fixed_q3_deg", text="", slider=True)
+
+        # Stage TCP lists
+        box.separator()
+        box.label(text="🔸 Stage TP Manager")
+
+        row = box.row()
+        row.template_list("UI_UL_stage_tcp_list", "", p, "stage_tcp_sorted_list", p, "stage_tcp_list_index", rows=6)
+
+        p = ctx.scene.ik_motion_props
+        obj = p.stage_tcp_sorted_list[p.stage_tcp_list_index] if p.stage_tcp_sorted_list and p.stage_tcp_list_index >= 0 else None
+        name = obj.name if obj else ""
+
+        col = row.column(align=True)
+        col.operator("object.refresh_stage_tcp_list", text="", icon='FILE_REFRESH')
+        col.operator("object.stage_tcp_move_up", text="", icon='TRIA_UP')
+        col.operator("object.stage_tcp_move_down", text="", icon='TRIA_DOWN')
+        op = col.operator("object.delete_stage_tcp_point", text="", icon='X')
+        op.name = name
+        col.operator("object.clear_all_stage_tcp_points", text="", icon='TRASH')
+        col.operator("object.add_stage_tcp_point", text="", icon='ADD')
+
+
+        # ───── Stage TCP Property Display (Goal + Joint values) ─────
+        selected = p.stage_tcp_sorted_list[p.stage_tcp_list_index] if p.stage_tcp_sorted_list and p.stage_tcp_list_index >= 0 else None
+        if selected:
+            obj = bpy.data.objects.get(selected.name)
+            if obj:
+                box.separator()
+                box.label(text=f"Selected: {obj.name}", icon='EMPTY_AXIS')
+
+                # Goal
+                goal = obj.get("goal", "")
+                row = box.row(align=True)
+                row.label(text="Goal label:")
+                row.prop(obj, '["goal"]', text="")
+
+                # Joint values
+                try:
+                    joint_values_raw = obj.get("joint_values", {})
+                    joint_values = dict(joint_values_raw)
+                except Exception as e:
+                    print(f"[ERROR] Cannot convert joint_values to dict: {e}")
+                    joint_values = {}
+
+                if joint_values:
+                    box.label(text="Joint Values:")
+                    for i, (joint_name, val) in enumerate(joint_values.items()):
+                        row = box.row(align=True)
+                        row.label(text=f"J{i+1}")
+                        try:
+                            fval = float(val)
+                            if "x" in joint_name or "y" in joint_name or "z" in joint_name:
+                                display_val = f"{fval * 1000:.1f} mm"
+                            elif "rot" in joint_name or "tilt" in joint_name:
+                                display_val = f"{math.degrees(fval):.1f}°"
+                            else:
+                                display_val = f"{fval:.3f}"
+                            row.label(text=f"{joint_name} = {display_val}", icon='BLANK1')
+                        except (ValueError, TypeError):
+                            row.label(text=f"⚠ {joint_name}", icon='ERROR')
+
 
         # Target Position (always visible)
         box.separator()
@@ -518,6 +597,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
 
 classes = [
     UI_UL_tcp_list,
+    UI_UL_stage_tcp_list,
     VIEW3D_PT_ur_ik,
     OBJECT_OT_import_robot_from_grid,
 ]
