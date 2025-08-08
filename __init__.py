@@ -21,11 +21,12 @@ from rteach.core.core import *
 from rteach.ops.ops_teach_main import classes as main_classes
 from rteach.ops.ops_teach_sub import classes as sub_classes
 from rteach.ops.ops_teach_util import classes as util_classes
+from rteach.ops.ops_teach_io import classes as io_classes
 from rteach.ui.ui_panel import classes as ui_classes
 from rteach.ops.ops_import_system import OBJECT_OT_import_robot_system
 from rteach.ui import ui_pie, ui_overlay
 
-from rteach.config.settings import IKMotionProperties, TcpItem, PathItem
+from rteach.config.settings import IKMotionProperties, TcpItem, PathItem, StageTCPItem
 from rteach.config.settings_static import JogProperties, StageJogProperties
 
 if not hasattr(bpy.types.Object, "motion_enum"):
@@ -41,6 +42,7 @@ if not hasattr(bpy.types.Object, "motion_enum"):
 
 classes = (
     TcpItem,
+    StageTCPItem,
     PathItem,
     StageJogProperties, 
     IKMotionProperties,
@@ -49,6 +51,7 @@ classes = (
     *main_classes,
     *sub_classes,
     *util_classes,
+    *io_classes,
     *ui_classes, 
 )
 
@@ -90,7 +93,6 @@ class RobotSimPreferences(bpy.types.AddonPreferences):
         default='PYD'
     )
 
-
     def draw(self, context):
         layout = self.layout
         layout.label(text="Optional UI Sections:")
@@ -103,7 +105,6 @@ class RobotSimPreferences(bpy.types.AddonPreferences):
         layout.separator(factor=1.5)
         layout.label(text="KUKA Solver Preference:")
         layout.prop(self, "kuka_solver_choice", expand=True)
-
 
 def register():
     for cls in classes:
