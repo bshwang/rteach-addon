@@ -2,6 +2,7 @@ import bpy
 import json
 import csv
 import tempfile, os, sys
+import re, itertools
 
 from pathlib import Path
 from mathutils import Vector, Quaternion
@@ -22,55 +23,107 @@ class OBJECT_OT_ShowJointGraph(bpy.types.Operator):
         except ImportError:
             self.report({'ERROR'}, "Matplotlib not installed: plotting unavailable")
             return {'CANCELLED'}
-        
+
         p       = context.scene.ik_motion_props
         scene   = context.scene
         start_f = scene.frame_start if p.frame_all else p.frame_start
         end_f   = scene.frame_end   if p.frame_all else p.frame_end
         span    = max(1, end_f - start_f)
-        bones   = get_BONES()
-        axes    = get_robot_axes(p.robot_type)
+        bones   = get_BONES()  
+        axes    = get_robot_axes(p.robot_type)  
         cfg     = ROBOT_CONFIGS.get(p.robot_type.lower(), {})
         stages  = cfg.get("stage_joints", [])
 
-        # decide axis settings
         def get_x(frames, pct):
             if p.use_cycle:
                 return pct, "Cycle (%)", (0, 100)
             else:
                 return frames, "Frame", (start_f, end_f)
 
-        # Robot plot
-        fig1, ax1 = plt.subplots()
+        def _to_py(x):
+            try:
+                return {k: _to_py(x[k]) for k in x.keys()}
+            except Exception:
+                if isinstance(x, dict):
+                    return {k: _to_py(v) for k, v in x.items()}
+                return x
+
+        rm = _to_py(context.scene.get("robot_mapping", {})) or {}
+        mapping_arms = {v for v in rm.values() if isinstance(v, str)}
+
+        def _bone_sig(arm):
+            try:
+                return tuple(sorted(b.name for b in arm.pose.bones))
+            except Exception:
+                return ()
+
+        sig_arms = set()
+        sel_arm = bpy.data.objects.get(p.armature) if p.armature else None
+        if sel_arm and sel_arm.type == 'ARMATURE':
+            sig = _bone_sig(sel_arm)
+            for ob in bpy.data.objects:
+                if ob.type == 'ARMATURE' and _bone_sig(ob) == sig:
+                    sig_arms.add(ob.name)
+
+        allowed_arm_names = mapping_arms | sig_arms
+
+        if not allowed_arm_names:
+            coll = bpy.data.collections.get("Teach data")
+            if coll:
+                for o in coll.objects:
+                    if o.get("stage"):
+                        continue
+                    base = o.find_armature()
+                    if base:
+                        allowed_arm_names.add(base.name)
+
+        def _valid_arm(a):
+            return a and a.type == 'ARMATURE' and all(a.pose.bones.get(bn) for bn in bones)
+
+        # ── Robot plot ──
+        paths = []
         if p.export_robot_all:
+            arms = [bpy.data.objects.get(n) for n in sorted(allowed_arm_names)]
+            arms = [a for a in arms if _valid_arm(a)]
+        else:
             arm = bpy.data.objects.get(p.armature)
-            if arm and arm.animation_data and arm.animation_data.action:
-                for i, bn in enumerate(bones):
-                    axis = axes[i].lower() if i < len(axes) else 'y'
-                    idx  = {'x':0,'y':1,'z':2}[axis]
-                    fc   = arm.animation_data.action.fcurves.find(
-                        data_path=f'pose.bones["{bn}"].rotation_euler', index=idx)
-                    if not fc: continue
-                    pts = [(kp.co[0], kp.co[1]) for kp in fc.keyframe_points
-                           if start_f <= kp.co[0] <= end_f]
-                    if not pts: continue
-                    frames, vals = zip(*pts)
-                    pct    = [100.0*(f-start_f)/span for f in frames]
-                    degs   = [v*180.0/3.141592653589793 for v in vals]
-                    x_vals, xlabel, xlim = get_x(frames, pct)
-                    ax1.plot(x_vals, degs, label=f"A{i+1}")
-        x_vals, xlabel, xlim = get_x([], [])
-        ax1.set(xlabel=xlabel, ylabel="angle (deg)", title="Robot Joints", xlim=xlim)
-        if p.export_robot_all:
+            arms = [arm] if _valid_arm(arm) else []
+
+        print(f"[GRAPH] Allowed arms: {sorted(list(allowed_arm_names))}")
+        print(f"[GRAPH] Selected arms: {[a.name for a in arms]}")
+
+        for arm in arms:
+            if not (arm and arm.animation_data and arm.animation_data.action):
+                continue
+            fig, ax = plt.subplots()
+            for i, bn in enumerate(bones):
+                axis = (axes[i] if i < len(axes) else 'y').lower()
+                idx  = {'x':0,'y':1,'z':2}[axis]
+                fc = arm.animation_data.action.fcurves.find(data_path=f'pose.bones["{bn}"].rotation_euler', index=idx)
+                if not fc:
+                    continue
+                pts = [(kp.co[0], kp.co[1]) for kp in fc.keyframe_points if start_f <= kp.co[0] <= end_f]
+                if not pts:
+                    continue
+                frames, vals = zip(*pts)
+                pct  = [100.0*(f-start_f)/span for f in frames]
+                degs = [v*180.0/3.141592653589793 for v in vals]
+                x_vals, xlabel, xlim = get_x(frames, pct)
+                ax.plot(x_vals, degs, label=f"A{i+1}")
+            x_vals, xlabel, xlim = get_x([], [])
+            ax.set(xlabel=xlabel, ylabel="angle (deg)", title=f"Robot Joints: {arm.name}", xlim=xlim)
             limits = get_joint_limits(p.robot_type)
             mins = [limits[i][0] for i in range(len(bones))]
             maxs = [limits[i][1] for i in range(len(bones))]
-            ax1.set_ylim(min(mins), max(maxs))
-        ax1.legend(loc="upper right")
-        path1 = os.path.join(tempfile.gettempdir(), "rteach_robot_graph.png")
-        fig1.savefig(path1); plt.close(fig1)
+            ax.set_ylim(min(mins), max(maxs))
+            ax.legend(loc="upper right")
+            safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in arm.name)
+            path = os.path.join(tempfile.gettempdir(), f"rteach_robot_graph_{safe}.png")
+            fig.savefig(path); plt.close(fig)
+            paths.append(path)
+        print(f"[GRAPH] Saved robot plots: {paths}")
 
-        # Stage plot
+        # ── Stage plot ──
         fig2, ax2 = plt.subplots(); axR = ax2.twinx()
         for i, sj in enumerate(stages):
             if i >= len(p.show_plot_stage_joints) or not p.show_plot_stage_joints[i]:
@@ -84,8 +137,7 @@ class OBJECT_OT_ShowJointGraph(bpy.types.Operator):
             if obj and obj.animation_data and obj.animation_data.action:
                 fc = obj.animation_data.action.fcurves.find(data_path=path_str, index=idx)
                 if fc:
-                    vals = [(kp.co[0], kp.co[1]) for kp in fc.keyframe_points
-                            if start_f <= kp.co[0] <= end_f]
+                    vals = [(kp.co[0], kp.co[1]) for kp in fc.keyframe_points if start_f <= kp.co[0] <= end_f]
             if not vals:
                 v0 = getattr(obj, path_str)[idx] if obj else 0.0
                 vals = [(start_f, v0), (end_f, v0)]
@@ -107,17 +159,29 @@ class OBJECT_OT_ShowJointGraph(bpy.types.Operator):
         path2 = os.path.join(tempfile.gettempdir(), "rteach_stage_graph.png")
         fig2.savefig(path2); plt.close(fig2)
 
-        # display
-        editors = [a for a in context.screen.areas if a.type=='IMAGE_EDITOR']
-        for idx, path in enumerate((path1, path2)):
+        img_paths = list(paths)
+        if 'path2' in locals() and path2:
+            img_paths.append(path2)
+
+        editors = [a for a in context.screen.areas if a.type == 'IMAGE_EDITOR']
+        for idx, path in enumerate(img_paths):
+            if not path:
+                continue
             if idx < len(editors):
-                area = editors[idx]; region = next(r for r in area.regions if r.type=='WINDOW')
-                ov = context.copy(); ov.update(area=area, region=region)
+                area = editors[idx]
+                region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+                if not region:
+                    continue
+                ov = context.copy()
+                ov.update(area=area, region=region)
                 bpy.ops.image.open(ov, filepath=path)
             else:
-                if sys.platform.startswith('win'): os.startfile(path)
-                elif sys.platform=='darwin':      os.system(f'open "{path}"')
-                else:                             os.system(f'xdg-open "{path}"')
+                if sys.platform.startswith('win'):
+                    os.startfile(path)
+                elif sys.platform == 'darwin':
+                    os.system(f'open "{path}"')
+                else:
+                    os.system(f'xdg-open "{path}"')
 
         return {'FINISHED'}
 
@@ -128,15 +192,57 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
 
     def execute(self, ctx):
         p = ctx.scene.ik_motion_props
-        arm = bpy.data.objects.get(p.armature)
-        if not arm:
-            self.report({'ERROR'}, "No armature found")
-            return {'CANCELLED'}
-
         bones = get_BONES()
         axes  = get_AXES()
         cfg   = ROBOT_CONFIGS.get(p.robot_type.lower(), {})
         stages = cfg.get("stage_joints", [])
+
+        def _to_py(x):
+            try:
+                return {k: _to_py(x[k]) for k in x.keys()}
+            except Exception:
+                if isinstance(x, dict):
+                    return {k: _to_py(v) for k, v in x.items()}
+                return x
+
+        rm = _to_py(ctx.scene.get("robot_mapping", {})) or {}
+        mapping_arms = {v for v in rm.values() if isinstance(v, str)}
+
+        def _bone_sig(arm):
+            try:
+                return tuple(sorted(b.name for b in arm.pose.bones))
+            except Exception:
+                return ()
+
+        sig_arms = set()
+        sel_arm = bpy.data.objects.get(p.armature) if p.armature else None
+        if sel_arm and sel_arm.type == 'ARMATURE':
+            sig = _bone_sig(sel_arm)
+            for ob in bpy.data.objects:
+                if ob.type == 'ARMATURE' and _bone_sig(ob) == sig:
+                    sig_arms.add(ob.name)
+
+        allowed_arm_names = mapping_arms | sig_arms
+
+        if not allowed_arm_names:
+            coll = bpy.data.collections.get("Teach data")
+            if coll:
+                for o in coll.objects:
+                    if o.get("stage"):
+                        continue
+                    base = o.find_armature()
+                    if base:
+                        allowed_arm_names.add(base.name)
+
+        arms = [bpy.data.objects.get(n) for n in sorted(allowed_arm_names)]
+        arms = [a for a in arms if a and a.type == 'ARMATURE' and all(a.pose.bones.get(bn) for bn in bones)]
+
+        print(f"[CSV EXPORT] Allowed arms: {sorted(list(allowed_arm_names))}")
+        print(f"[CSV EXPORT] Selected arms: {[a.name for a in arms]}")
+
+        if not arms:
+            self.report({'ERROR'}, "No eligible robot armatures")
+            return {'CANCELLED'}
 
         frame_start = ctx.scene.frame_start if p.frame_all else p.frame_start
         frame_end   = ctx.scene.frame_end   if p.frame_all else p.frame_end
@@ -144,28 +250,36 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
 
         headers = ["frame"]
         if p.export_robot_all:
-            headers += [f"j{i+1}" for i in range(len(bones))]
+            for a in arms:
+                headers += [f"{a.name}:j{i+1}" for i in range(len(bones))]
+
+        stage_headers = []
         for i, sj in enumerate(stages):
             if i < len(p.show_plot_stage_joints) and p.show_plot_stage_joints[i]:
-                headers.append(sj[1])
+                stage_headers.append(sj[0])
+
+        headers += stage_headers
+
+        print(f"[CSV EXPORT] Headers: {headers}")
 
         data = []
         for f in frames:
             ctx.scene.frame_set(f)
             row = [f]
             if p.export_robot_all:
-                for i, bname in enumerate(bones):
-                    b = arm.pose.bones.get(bname)
-                    axis = axes[i]
-                    val = getattr(b.rotation_euler, axis) if b else 0.0
-                    row.append(round(val,4))
+                for a in arms:
+                    for i, bname in enumerate(bones):
+                        b = a.pose.bones.get(bname)
+                        axis = axes[i]
+                        val = getattr(b.rotation_euler, axis) if b else 0.0
+                        row.append(round(val, 4))
             for i, sj in enumerate(stages):
                 if i < len(p.show_plot_stage_joints) and p.show_plot_stage_joints[i]:
                     name = sj[0]; axis = sj[5]; jtype = sj[6]
                     ob = bpy.data.objects.get(name)
                     idx = {"x":0,"y":1,"z":2}[axis.lower()]
-                    v = (ob.location[idx] if jtype=="location" else ob.rotation_euler[idx]) if ob else 0.0
-                    row.append(round(v,4))
+                    v = (ob.location[idx] if jtype == "location" else ob.rotation_euler[idx]) if ob else 0.0
+                    row.append(round(v, 4))
             data.append(row)
 
         filename = p.export_joint_csv_filename
@@ -175,6 +289,7 @@ class OBJECT_OT_export_joint_graph_csv(bpy.types.Operator):
             writer.writerow(headers)
             writer.writerows(data)
 
+        print(f"[CSV EXPORT] Frames: {len(data)}, Stage headers: {stage_headers}")
         self.report({'INFO'}, f"Exported CSV with {len(data)} frames → {path.name}")
         return {'FINISHED'}
 
@@ -188,7 +303,7 @@ class OBJECT_OT_import_teach_data(bpy.types.Operator):
 
         scene = ctx.scene
         p = scene.ik_motion_props
-        json_path = Path(bpy.path.abspath(f"//{p.export_teach_filename}"))
+        json_path = Path(bpy.path.abspath(f"//{p.import_teach_filename}"))
 
         if not json_path.exists():
             self.report({'ERROR'}, f"File not found: {json_path.name}")
@@ -414,6 +529,30 @@ class OBJECT_OT_export_teach_data(bpy.types.Operator):
     bl_label  = "Export Teach Data (.json)"
 
     def execute(self, ctx):
+        import json, re, itertools
+
+        def _to_py(x):
+            try:
+                if isinstance(x, dict):
+                    return {k: _to_py(v) for k, v in x.items()}
+                if isinstance(x, (list, tuple)):
+                    return [_to_py(v) for v in x]
+                if hasattr(x, "keys"):
+                    return {k: _to_py(x[k]) for k in x.keys()}
+            except Exception:
+                pass
+            return x
+
+        def _jsonify(x):
+            if isinstance(x, dict):
+                return {k: _jsonify(v) for k, v in x.items()}
+            if isinstance(x, (list, tuple)):
+                return [_jsonify(v) for v in x]
+            try:
+                json.dumps(x)
+                return x
+            except TypeError:
+                return str(x)
 
         p       = ctx.scene.ik_motion_props
         arm_obj = bpy.data.objects.get(p.armature)
@@ -423,103 +562,393 @@ class OBJECT_OT_export_teach_data(bpy.types.Operator):
             self.report({'ERROR'}, "Armature or Teach data missing")
             return {'CANCELLED'}
 
-        inv = arm_obj.matrix_world.inverted()
-        tps = sorted(coll.objects, key=lambda o: o.get("seq", 0))
+        manip_tps = [o for o in coll.objects if "joint_pose" in o.keys() and not o.get("stage")]
+
+        def _idkeys(o):
+            try: return list(o.keys())
+            except: return []
+
+        stage_by_flag  = [o for o in bpy.data.objects if bool(o.get("stage"))]
+        stage_by_jvals = [o for o in bpy.data.objects if "joint_values" in _idkeys(o)]
+        stage_by_coll  = []
+        for c in bpy.data.collections:
+            if "stage" in c.name.lower():
+                stage_by_coll.extend(list(c.objects))
+        stage_by_coll = list({o.name: o for o in stage_by_coll}.values())
+        stage_all = {}
+        for o in itertools.chain(stage_by_flag, stage_by_jvals, stage_by_coll):
+            stage_all[o.name] = o
+        stage_tps = sorted(stage_all.values(), key=lambda o: o.get("index", 999999))
+
+        print(f"[EXPORT] Manip TPs: {len(manip_tps)}, Stage TPs: {len(stage_tps)}")
 
         robot_mapping = {}
+        scene_map = _to_py(ctx.scene.get("robot_mapping", {}))
+        if isinstance(scene_map, dict) and scene_map:
+            robot_mapping.update(scene_map)
+            print(f"[EXPORT] Loaded RobotMapping from scene: {len(scene_map)}")
+
         print("[EXPORT] Building RobotMapping...")
-
-        for obj in tps:
+        for obj in manip_tps:
             rob_key = obj.get("robot_key", "") or obj.get("robot", "")
-            if not rob_key:
-                print(f"[WARN] TCP '{obj.name}' has no 'robot_key'")
+            if not rob_key or rob_key in robot_mapping:
                 continue
-            if rob_key in robot_mapping:
-                continue
-
             base = obj.find_armature()
             if not base:
                 guess = rob_key.lower()
-                base = next(
-                    (obj for obj in bpy.data.objects
-                     if obj.type == 'ARMATURE' and obj.name.lower().startswith(guess)),
-                    None
-                )
+                base = next((o for o in bpy.data.objects if o.type == 'ARMATURE' and o.name.lower().startswith(guess)), None)
                 if base:
                     print(f"[INFO] Found armature '{guess}' for robot key '{rob_key}'")
                 else:
                     print(f"[FAIL] No armature found for robot '{rob_key}' → Tried: '{guess}'")
-
             if base:
                 robot_mapping[rob_key] = base.name
             else:
                 print(f"[WARN] TCP '{obj.name}' has robot '{rob_key}' but no armature resolved")
+        print(f"[EXPORT] RobotMapping built: {len(robot_mapping)} entries")
+
+        base_locs = {}
+        for rk in {o.get("robot_key","") or o.get("robot","") for o in manip_tps}:
+            if not rk: continue
+            nm = robot_mapping.get(rk)
+            base = bpy.data.objects.get(nm) if isinstance(nm, str) else None
+            base_locs[rk] = (base.matrix_world.translation.copy() if base else arm_obj.matrix_world.translation.copy())
+        default_base_loc = arm_obj.matrix_world.translation.copy()
+
+        def make_manip_point(obj, base_loc):
+            mw = obj.matrix_world
+            pos = mw.translation - base_loc
+            quat = mw.to_quaternion()
+            qp = obj.get("joint_pose", [])
+            pt = {}
+            for i, v in enumerate(qp):
+                pt[f"A{i+1}"] = round(float(v), 6)
+            mt = obj.get("motion_type", "JOINT")
+            pt["MoveType"] = "PTP" if mt == "JOINT" else "LIN"
+            pt["QW"] = round(float(quat.w), 6)
+            pt["QX"] = round(float(quat.x), 6)
+            pt["QY"] = round(float(quat.y), 6)
+            pt["QZ"] = round(float(quat.z), 6)
+            pt["X"]  = round(float(pos.x), 6)
+            pt["Y"]  = round(float(pos.y), 6)
+            pt["Z"]  = round(float(pos.z), 6)
+            return pt
+
+        stage_maps = {}
+        for k, v in robot_mapping.items():
+            if isinstance(v, dict) and isinstance(v.get("joints"), dict) and v.get("joints"):
+                stage_maps[k] = v["joints"]
+        print(f"[EXPORT][STAGE] Available stage robots: {list(stage_maps.keys())}")
+
+        def applicable_stage_robots(obj):
+            r = set()
+            jvals = dict(obj.get("joint_values", {}))
+            rk_obj = str(obj.get("robot_key","") or obj.get("robot",""))
+            for rk, jm in stage_maps.items():
+                names = set(jm.values())
+                if any(n in jvals for n in names):
+                    r.add(rk)
+                    continue
+                mv = robot_mapping.get(rk, {})
+                cfg = mv.get("config") if isinstance(mv, dict) else None
+                if rk_obj and (rk_obj == rk or rk_obj == cfg):
+                    r.add(rk)
+            return r
+
+        def resolve_stage_map(rk):
+            v = robot_mapping.get(rk, None)
+            if isinstance(v, dict) and v.get("joints"):
+                return rk, v["joints"]
+            return "", {}
+
+        def make_stage_point(obj, joints_map):
+            jvals = dict(obj.get("joint_values", {}))
+            pt = {}
+            axes = list(joints_map.keys())
+            for ax in axes:
+                name = joints_map.get(ax)
+                try:
+                    v = float(jvals.get(name, 0.0))
+                except Exception:
+                    v = 0.0
+                pt[ax] = round(v, 6)
+            mv = obj.get("move_order", None)
+            if mv is not None:
+                pt["MoveOrder"] = mv
+            print(f"[EXPORT][STAGE] make_stage_point {obj.name} axes={axes} -> {pt}")
+            return pt
 
         task_dict = {}
 
-        def make_point(obj):
-            mat  = inv @ obj.matrix_world
-            pos  = mat.to_translation()
-            quat = mat.to_quaternion()
-            qp   = obj.get("joint_pose", [])
-            pt   = {}
+        manip_by_robot = {}
+        for o in manip_tps:
+            key = o.get("robot_key", "") or o.get("robot", "")
+            if not key:
+                name = o.name.upper()
+                if "_L_" in name: key = "MANIPULATOR_LEFT"
+                elif "_R_" in name: key = "MANIPULATOR_RIGHT"
+            manip_by_robot.setdefault(key, []).append(o)
+        for key in manip_by_robot:
+            manip_by_robot[key].sort(key=lambda o: o.get("index", 1e9))
+            print(f"[EXPORT] Group {key or '(no key)'}: {len(manip_by_robot[key])} points")
 
-            if not qp:
-                print(f"[WARN] TCP '{obj.name}' has no joint_pose data")
+        for rob_key, items in manip_by_robot.items():
+            base_loc = base_locs.get(rob_key, default_base_loc)
+            for i in range(1, len(items)):
+                prev_tp, tp = items[i-1], items[i]
+                goal_pt  = make_manip_point(tp, base_loc)
+                start_pt = make_manip_point(prev_tp, base_loc)
+                path_name = f"FROM_{prev_tp.get('goal','')}_TO_{tp.get('goal','')}"
+                rk_out = rob_key or arm_obj.name
+                key = (path_name, rk_out)
+                task = task_dict.setdefault(key, {"Path": path_name, "Points": [], "Robot": rk_out})
+                task["Points"].append({"GoalPoint": goal_pt, "StartPoint": start_pt})
+                print(f"[EXPORT]   + Pair {i-1}->{i}: {prev_tp.name} -> {tp.name} [{rk_out}]")
 
-            for i, v in enumerate(qp):
-                pt[f"A{i+1}"] = round(v, 6)
-
-            mt = obj.get("motion_type", "JOINT")
-            pt["MoveType"] = "PTP" if mt == "JOINT" else "LIN"
-            pt["QW"] = round(quat.w, 6)
-            pt["QX"] = round(quat.x, 6)
-            pt["QY"] = round(quat.y, 6)
-            pt["QZ"] = round(quat.z, 6)
-            pt["X"]  = round(pos.x, 6)
-            pt["Y"]  = round(pos.y, 6)
-            pt["Z"]  = round(pos.z, 6)
-            return pt
-
-        for i in range(1, len(tps)):
-            prev_tp = tps[i - 1]
-            tp      = tps[i]
-
-            start_pt  = make_point(prev_tp)
-            goal_pt   = make_point(tp)
-
-            path_name = f"FROM_{prev_tp.get('goal', '')}_TO_{tp.get('goal', '')}"
-            rob_key   = tp.get("robot_key", "") or tp.get("robot", "")
-
-            if not rob_key:
-                print(f"[WARN] TCP '{tp.name}' has no robot key — fallback to armature")
-
-            task_dict.setdefault(path_name, {
-                "Path": path_name,
-                "Points": [],
-                "Robot": rob_key or arm_obj.name
-            })
-
-            task_dict[path_name]["Points"].append({
-                "StartPoint": start_pt,
-                "GoalPoint":  goal_pt
-            })
+        if stage_tps:
+            print(f"[EXPORT] Stage sequence: {len(stage_tps)} points")
+            match_cache = {}
+            for o in stage_tps:
+                match_cache[o.name] = sorted(list(applicable_stage_robots(o)))
+                print(f"[EXPORT][STAGE] detect {o.name}: -> {match_cache[o.name] or 'None'}")
+            for i in range(1, len(stage_tps)):
+                prev_tp, tp = stage_tps[i - 1], stage_tps[i]
+                robots = set(match_cache.get(prev_tp.name, [])) | set(match_cache.get(tp.name, []))
+                if not robots:
+                    print(f"[EXPORT][STAGE] Skip pair {prev_tp.name}->{tp.name}: no matching stage robots")
+                    continue
+                for rk in sorted(list(robots)):
+                    rk_out, joints_map = resolve_stage_map(rk)
+                    if not joints_map:
+                        print(f"[WARN] Skip stage pair {prev_tp.name}->{tp.name}: no joints map for '{rk}'")
+                        continue
+                    goal_pt  = make_stage_point(tp, joints_map)
+                    start_pt = make_stage_point(prev_tp, joints_map)
+                    path_name = f"FROM_{prev_tp.get('goal','')}_TO_{tp.get('goal','')}"
+                    key = (path_name, rk_out)
+                    task = task_dict.setdefault(key, {"Path": path_name, "Points": [], "Robot": rk_out})
+                    task["Points"].append({"GoalPoint": goal_pt, "StartPoint": start_pt})
+                    print(f"[EXPORT]   + [STAGE:{rk_out}] {prev_tp.name}->{tp.name} | Goal {goal_pt} | Start {start_pt}")
+        else:
+            print("[EXPORT] No Stage TPs found")
 
         full_data = {
-            "RobotMapping": robot_mapping,
+            "RobotMapping": _to_py(robot_mapping),
             "Task": list(task_dict.values())
         }
 
         filename = p.export_teach_filename
         filepath = bpy.path.abspath(f"//{filename}")
         with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(full_data, f, indent=2)
+            json.dump(_jsonify(full_data), f, indent=2)
 
         print(f"[EXPORT] Exported Teach Data to: {filepath}")
-        print(f"[EXPORT] RobotMapping = {robot_mapping}")
+        print(f"[EXPORT] RobotMapping = {_to_py(robot_mapping)}")
         print(f"[EXPORT] Task count = {len(full_data['Task'])}")
-
         self.report({'INFO'}, f"Exported Teach Data → {filename}")
+        return {'FINISHED'}
+
+# ──────────────────────────────────────────────────────────────  
+class OBJECT_OT_import_joint_csv(bpy.types.Operator):
+    bl_idname = "object.import_joint_csv"
+    bl_label  = "Import Joint CSV"
+
+    def execute(self, ctx):
+
+        p = ctx.scene.ik_motion_props
+        path = Path(bpy.path.abspath(f"//{p.import_joint_csv_filename}"))
+        if not path.exists():
+            self.report({'ERROR'}, f"CSV not found: {path.name}")
+            return {'CANCELLED'}
+
+        bones = get_BONES()
+        axes  = get_AXES()
+        fps   = ctx.scene.render.fps or 24
+
+        cfg = ROBOT_CONFIGS.get(p.robot_type.lower(), {})
+        stage_defs = {}
+        for sj in cfg.get("stage_joints", []):
+            name = sj[0]
+            axis = str(sj[5]).lower()
+            jtyp = str(sj[6]).lower()
+            unit = str(sj[2]).lower()
+            stage_defs[name] = (axis, jtyp, unit)
+
+        arms_by_name = {a.name: a for a in bpy.data.objects if a.type == 'ARMATURE'}
+
+        def ensure_pose(arm):
+            if arm and arm.mode != 'POSE':
+                ctx.view_layer.objects.active = arm
+                try: bpy.ops.object.mode_set(mode='POSE')
+                except: pass
+
+        def arm_by_casefold(name_guess):
+            arm = arms_by_name.get(name_guess)
+            if arm: return arm
+            low = name_guess.lower()
+            for nm, ob in arms_by_name.items():
+                if nm.lower() == low:
+                    return ob
+            return None
+
+        PI = 3.141592653589793
+        EPS_M = 1e-6
+        EPS_RAD = 1e-6
+
+        def changed(prev, cur, is_rot):
+            if prev is None:
+                return True
+            e = EPS_RAD if is_rot else EPS_M
+            return abs(cur - prev) > e
+
+        def key_pb(pb, idx, val, frame):
+            e = list(pb.rotation_euler)
+            e[idx] = val
+            pb.rotation_euler = e
+            pb.keyframe_insert(data_path="rotation_euler", index=idx, frame=frame)
+
+        def key_loc(ob, idx, val, frame):
+            v = list(ob.location)
+            v[idx] = val
+            ob.location = v
+            ob.keyframe_insert(data_path="location", index=idx, frame=frame)
+
+        def key_rot(ob, idx, val, frame):
+            if ob.rotation_mode != "XYZ":
+                ob.rotation_mode = "XYZ"
+            v = list(ob.rotation_euler)
+            v[idx] = val
+            ob.rotation_euler = v
+            ob.keyframe_insert(data_path="rotation_euler", index=idx, frame=frame)
+
+        last_robot_val = {}
+        last_robot_key = {}
+        last_stage_val = {}
+        last_stage_key = {}
+
+        pat_colon = re.compile(r'^(?P<arm>.+?):j(?P<idx>\d+)$', re.I)
+        pat_under = re.compile(r'^(?P<arm>.+?)_j(?P<idx>\d+)$', re.I)
+
+        total_robot_keys = 0
+        total_stage_keys = 0
+        first_frame = None
+        last_frame = None
+
+        with open(path, encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            headers = reader.fieldnames or []
+            frame_key = next((h for h in headers if h and h.lower() in ("frame","frames")), None)
+            time_key  = next((h for h in headers if h and h.lower() in ("time","t")), None)
+
+            stage_cols = [h for h in headers if h in stage_defs]
+
+            for i, row in enumerate(reader, start=1):
+                if frame_key:
+                    try: frame = int(float(row.get(frame_key, i)))
+                    except: frame = i
+                elif time_key:
+                    try: frame = int(round(float(row.get(time_key, 0.0)) * fps))
+                    except: frame = i
+                else:
+                    frame = i
+
+                if first_frame is None:
+                    first_frame = frame
+                last_frame = frame
+
+                for h in headers:
+                    if not h: continue
+                    m = pat_colon.match(h) or pat_under.match(h)
+                    if not m: continue
+                    arm_name = m.group("arm")
+                    j_idx = int(m.group("idx")) - 1
+                    if j_idx < 0 or j_idx >= len(bones): continue
+                    txt = row.get(h, "")
+                    if txt in ("", None): continue
+                    try: val = float(txt)
+                    except: continue
+
+                    arm = arm_by_casefold(arm_name)
+                    if not arm: continue
+                    pb = arm.pose.bones.get(bones[j_idx])
+                    if not pb: continue
+                    ensure_pose(arm)
+
+                    ax = (axes[j_idx] if j_idx < len(axes) else 'y').lower()
+                    idx = {'x':0,'y':1,'z':2}[ax]
+                    if pb.rotation_mode != 'XYZ':
+                        pb.rotation_mode = 'XYZ'
+
+                    key_id = (arm.name, bones[j_idx], idx)
+                    prev = last_robot_val.get(key_id)
+                    if changed(prev, val, True):
+                        prev_key = last_robot_key.get(key_id)
+                        if prev is not None and prev_key is not None and frame-1 > prev_key:
+                            key_pb(pb, idx, prev, frame-1); total_robot_keys += 1
+                        key_pb(pb, idx, val, frame); total_robot_keys += 1
+                        last_robot_val[key_id] = val
+                        last_robot_key[key_id] = frame
+
+                for col in stage_cols:
+                    txt = row.get(col, "")
+                    if txt in ("", None): continue
+                    try: v_csv = float(txt)
+                    except: continue
+
+                    axis, jtyp, unit = stage_defs.get(col, ('z','location','m'))
+                    idx = {'x':0,'y':1,'z':2}[axis]
+                    ob = bpy.data.objects.get(col)
+                    if not ob: continue
+
+                    if jtyp == "location":
+                        v_mm = v_csv * 1000.0
+                        v_obj = v_mm / 1000.0
+                        key_id = (ob.name, 'loc', idx)
+                        prev = last_stage_val.get(key_id)
+                        if changed(prev, v_mm, False):
+                            prev_key = last_stage_key.get(key_id)
+                            if prev is not None and prev_key is not None and frame-1 > prev_key:
+                                key_loc(ob, idx, prev/1000.0, frame-1); total_stage_keys += 1
+                            key_loc(ob, idx, v_obj, frame); total_stage_keys += 1
+                            last_stage_val[key_id] = v_mm
+                            last_stage_key[key_id] = frame
+                    else:
+                        v_deg = v_csv * 180.0 / PI
+                        v_obj = v_deg * PI / 180.0
+                        if ob.rotation_mode != "XYZ":
+                            ob.rotation_mode = "XYZ"
+                        key_id = (ob.name, 'rot', idx)
+                        prev = last_stage_val.get(key_id)
+                        if changed(prev, v_deg, True):
+                            prev_key = last_stage_key.get(key_id)
+                            if prev is not None and prev_key is not None and frame-1 > prev_key:
+                                key_rot(ob, idx, prev*PI/180.0, frame-1); total_stage_keys += 1
+                            key_rot(ob, idx, v_obj, frame); total_stage_keys += 1
+                            last_stage_val[key_id] = v_deg
+                            last_stage_key[key_id] = frame
+
+        if last_frame is not None:
+            for (arm_name, bname, idx), prev in last_robot_val.items():
+                kf = last_robot_key.get((arm_name, bname, idx))
+                if kf is not None and kf != last_frame:
+                    arm = arms_by_name.get(arm_name)
+                    if arm:
+                        pb = arm.pose.bones.get(bname)
+                        if pb:
+                            key_pb(pb, idx, prev, last_frame); total_robot_keys += 1
+
+            for (obname, kind, idx), prev in last_stage_val.items():
+                kf = last_stage_key.get((obname, kind, idx))
+                if kf is not None and kf != last_frame:
+                    ob = bpy.data.objects.get(obname)
+                    if ob:
+                        if kind == 'loc':
+                            key_loc(ob, idx, prev/1000.0, last_frame); total_stage_keys += 1
+                        else:
+                            key_rot(ob, idx, prev*PI/180.0, last_frame); total_stage_keys += 1
+
+        print(f"[CSV IMPORT] {path.name}  robot_keys={total_robot_keys}  stage_keys={total_stage_keys}")
+        self.report({'INFO'}, f"Imported CSV → {path.name}")
         return {'FINISHED'}
 
 # ──────────────────────────────────────────────────────────────   
@@ -528,4 +957,5 @@ classes = (
     OBJECT_OT_export_joint_graph_csv,
     OBJECT_OT_ShowJointGraph,
     OBJECT_OT_import_teach_data,
+    OBJECT_OT_import_joint_csv,
 )
