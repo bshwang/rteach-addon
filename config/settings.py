@@ -11,24 +11,34 @@ class StageTCPItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty()
 
 def update_ik_index_preview(self, ctx):
-    p   = ctx.scene.ik_motion_props
+    p = ctx.scene.ik_motion_props
     arm = bpy.data.objects.get(p.armature)
 
-    if not p.solutions or not arm:
-        print("[IK_PREVIEW] No solutions or armature not found")
+    sols = list(p.solutions) if p.solutions else []
+    n = int(getattr(p, "max_solutions", len(sols)))
+
+    if not arm:
+        p.status_text = "Armature not found"
         return
 
-    idx = p.solution_index_ui - 1
-    if not (0 <= idx < len(p.solutions)):
-        print(f"[IK_PREVIEW] Index {idx} out of range")
+    if n <= 0 or not sols:
+        p.status_text = "No IK solutions"
         return
 
-    q_sel = p.solutions[idx]
-    print(f"[IK_PREVIEW] Apply idx {idx}: "
-          f"{[round(math.degrees(a),2) for a in q_sel]}")
+    idx_ui = int(self.solution_index_ui)
+    if idx_ui < 1:
+        idx_ui = 1
+    if idx_ui > n:
+        idx_ui = n
 
+    if idx_ui != self.solution_index_ui:
+        self.solution_index_ui = idx_ui
+        p.status_text = f"Clamped IK index to {idx_ui}/{n}"
+
+    q_sel = sols[idx_ui - 1]
     apply_solution(arm, q_sel, ctx.scene.frame_current, insert_keyframe=False)
-    p.current_index = idx
+    p.current_index = idx_ui - 1
+    p.status_text = f"Preview IK {idx_ui}/{n}"
 
 def in_collections(collection_names):
     def _poll(self, obj):
@@ -50,6 +60,48 @@ def delayed_workspace_update():
     result = bpy.ops.object.toggle_workspace_visibility()
     return None
 
+def _on_stage_tcp_index_update(self, ctx):
+    p = ctx.scene.ik_motion_props
+    items = p.stage_tcp_sorted_list
+    i = p.stage_tcp_list_index
+    if not items or i < 0 or i >= len(items):
+        return None
+
+    name = items[i].name
+    src = bpy.data.objects.get(name)
+    if not src:
+        return None
+
+    jv = src.get("joint_values", None)
+    cfg = ROBOT_CONFIGS.get(p.robot_type, {})
+    for sj in cfg.get("stage_joints", []):
+        key, _, _, _, _, axis, jtype = sj
+        tgt = bpy.data.objects.get(key)
+        if not tgt:
+            continue
+
+        ax = {"x": 0, "y": 1, "z": 2}[axis.lower()]
+        val = None
+        if isinstance(jv, dict):
+            val = jv.get(key, None)
+        elif jv is not None:
+            try:
+                if hasattr(jv, "keys") and key in jv.keys():
+                    val = float(jv[key])
+            except Exception:
+                val = None
+        if val is None:
+            continue
+
+        if jtype == "location":
+            loc = list(tgt.location); loc[ax] = float(val); tgt.location = loc
+        else:
+            tgt.rotation_mode = 'XYZ'
+            rot = list(tgt.rotation_euler); rot[ax] = float(val); tgt.rotation_euler = rot
+
+    ctx.view_layer.update()
+    return None
+
 class PathItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Goal Name")
 
@@ -59,7 +111,11 @@ class IKMotionProperties(bpy.types.PropertyGroup):
     tcp_list_index: bpy.props.IntProperty(name="Selected TCP Index", default=0)
 
     stage_tcp_sorted_list: bpy.props.CollectionProperty(type=TcpItem)
-    stage_tcp_list_index: bpy.props.IntProperty(name="Selected Stage TCP Index", default=0)
+    stage_tcp_list_index: bpy.props.IntProperty(
+        name="Selected Stage TCP Index",
+        default=0,
+        update=_on_stage_tcp_index_update
+    )
     selected_stage_tcp: bpy.props.PointerProperty(type=bpy.types.Object)
 
     selected_teach_point: bpy.props.PointerProperty(
@@ -271,6 +327,14 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         update=lambda self, ctx: bpy.app.timers.register(delayed_workspace_update, first_interval=0.01)
     )
 
+    show_robot_motion: bpy.props.BoolProperty(
+        name="Show Robot Motion", default=True
+    )
+
+    show_stage_motion: bpy.props.BoolProperty(
+        name="Show Stage Motion", default=True
+    )
+
     bake_start_frame: bpy.props.IntProperty(
         name="Start Frame",
         default=1,
@@ -295,6 +359,8 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         min=0
     )
 
+    import_teach_filename: bpy.props.StringProperty(name="Import Teach JSON", default="export_teachpoint.json", subtype='FILE_NAME')
+
     export_teach_filename: bpy.props.StringProperty(
         name="Export Filename",
         default="export_teachpoint.json",
@@ -308,6 +374,13 @@ class IKMotionProperties(bpy.types.PropertyGroup):
 
     export_robot_all: bpy.props.BoolProperty(
         name="Robot", description="Include robot joints", default=True)
+    
+    import_joint_csv_filename: bpy.props.StringProperty(
+        name="Import CSV",
+        default="parsed_motion.csv",
+        description="CSV file to import (time-series)",
+        subtype='FILE_NAME'
+    )
 
     show_plot_stage_joints: bpy.props.BoolVectorProperty(
         name="Stage Joints",
