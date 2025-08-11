@@ -130,14 +130,10 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
 
     def draw(self, ctx):
         L = self.layout
-        p = ctx.scene.ik_motion_props
-
         self.draw_robot_selector(L, ctx)
         self.draw_setup_section(L, ctx)
-        self.draw_target_section(L, ctx)
-        self.draw_jog_section(L, ctx)
-        self.draw_stage_jog_section(L, ctx)
-        self.draw_tcp_manager(L, ctx)
+        self.draw_stage_motion(L, ctx)
+        self.draw_robot_motion(L, ctx)
         self.draw_io_section(L, ctx)
 
     def draw_robot_selector(self, L, ctx):
@@ -246,24 +242,72 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.prop(p.goal_object, 'location', index=2, text="Z")
             row.prop(p.goal_object, 'rotation_euler', index=2, text="RZ")
 
-    def draw_jog_section(self, L, ctx):
+    def draw_robot_motion(self, L, ctx):
         p = ctx.scene.ik_motion_props
         box = L.box()
         row = box.row()
-        icon = 'TRIA_DOWN' if p.show_jog else 'TRIA_RIGHT'
-        row.prop(p, "show_jog", icon=icon, text="Robot Jog Mode", emboss=False)
+        icon = 'TRIA_DOWN' if p.show_robot_motion else 'TRIA_RIGHT'
+        row.prop(p, "show_robot_motion", icon=icon, text="Robot Motion", emboss=False)
+        if not p.show_robot_motion:
+            return
+
+        self.draw_jog_section(box, ctx)
+        self.draw_robot_tp_manager(box, ctx)
+        self.draw_target_tools(box, ctx)  
+
+    def draw_target_tools(self, L, ctx):
+        p = ctx.scene.ik_motion_props
+        box = L.box()
+        box.label(text="🔸 Tools")
+
+        row = box.row(align=True)
+        row.operator("object.focus_on_target", text="Select",  icon='RESTRICT_SELECT_OFF')
+        row.operator("object.snap_target_to_fk", text="to FK", icon='PIVOT_ACTIVE')
+        row.operator("object.snap_goal_to_active", text="to Active", icon='PIVOT_ACTIVE')
+
+        row = box.row(align=True)
+        row.operator("object.preview_goal_pose", text="Preview", icon='HIDE_OFF')
+        row.operator("object.record_goal_pose",  text="Record",  icon='REC')
+
+        row = box.row(align=True)
+        row.operator("object.update_tcp_pose",      text="Update",        icon='EXPORT')
+        row.operator("object.update_all_tcp_poses", text="Recompute All", icon='FILE_REFRESH')
+
+        row = box.row(align=True)
+        row.prop(p, "bake_start_frame", text="Start Frame")
+        row.operator("object.bake_teach_sequence", text="Bake", icon='FILE_TICK')
+        row.operator("object.clear_bake_keys",     text="",     icon='TRASH')
+
+        row = box.row(align=True)
+        row.operator("object.pick_object",           text="Pick",  icon='LINKED')
+        row.operator("object.place_object",          text="Place", icon='UNLINKED')
+        row.operator("object.clear_dynamic_parent",  text="",      icon='TRASH')
+
+    def draw_stage_motion(self, L, ctx):
+        p = ctx.scene.ik_motion_props
+        box = L.box()
+        row = box.row()
+        icon = 'TRIA_DOWN' if p.show_stage_motion else 'TRIA_RIGHT'
+        row.prop(p, "show_stage_motion", icon=icon, text="Stage Motion", emboss=False)
+        if not p.show_stage_motion:
+            return
+
+        self.draw_stage_jog_section(box, ctx)
+        self.draw_stage_tp_manager(box, ctx)
+
+    def draw_jog_section(self, L, ctx):
+        p = ctx.scene.ik_motion_props
+        box = L.box()
+        box.label(text="🔸 Jog Mode")
 
         if not p.robot_type:
             box.label(text="No robot selected")
             return
 
-        if not p.show_jog:
-            return
-
         jog = ctx.scene.jog_props
         bones = get_BONES()
         limits = get_joint_limits(p.robot_type)
-        
+
         expected_dof = len(bones)
         actual_props = [k for k in dir(jog) if k.startswith("joint_")]
         if len(actual_props) < expected_dof:
@@ -290,28 +334,19 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row.operator("object.record_tcp_from_jog", text="Waypoint", icon='EMPTY_AXIS')
         row.operator("object.go_home_pose", text="Home", icon='HOME')
 
-    def draw_tcp_manager(self, L, ctx):
+    def draw_robot_tp_manager(self, L, ctx):
         p = ctx.scene.ik_motion_props
         obj = p.selected_teach_point
-        icon = 'TRIA_DOWN' if p.show_teach else 'TRIA_RIGHT'
 
         box = L.box()
-        row = box.row()
-        row.prop(p, "show_teach", icon=icon, text="Motion Teaching", emboss=False)
-
-        if not p.show_teach:
-            return
-
         box.label(text="🔸 TP manager")
 
         row = box.row()
-
         list_col = row.column()
-        list_col.template_list("UI_UL_tcp_list", "", p, "tcp_sorted_list", p, "tcp_list_index", rows=6)
+        list_col.template_list("UI_UL_tcp_list", "", p, "tcp_sorted_list", p, "tcp_list_index", rows=5)
 
         btn_col = row.column(align=True)
         btn_col.operator("object.refresh_tcp_list", text="", icon='FILE_REFRESH')
-        btn_col.operator("object.reindex_tcp_points", text="", icon='SORTALPHA')
         btn_col.operator("object.tcp_move_up", text="", icon='TRIA_UP')
         btn_col.operator("object.tcp_move_down", text="", icon='TRIA_DOWN')
         btn_col.operator("object.tcp_delete", text="", icon='X').name = obj.name if obj else ""
@@ -326,8 +361,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             row.operator("object.preview_tcp_next_pose", text="", icon='FORWARD')
         else:
             row.label(text="Selected: None", icon='PINNED')
-            
-        # Goal Label
+
         row = box.row(align=True)
         row.label(text="Goal label:")
         if obj:
@@ -335,17 +369,14 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         else:
             row.label(text="None")
 
-        # Motion
         row = box.row(align=True)
         row.label(text="Motion:")
         if obj:
             row.operator("object.toggle_motion_type", text="", icon='FILE_REFRESH')
-            motion = obj.get("motion_type", "?")
-            row.label(text=motion)
+            row.label(text=obj.get("motion_type", "?"))
         else:
             row.label(text="None")
 
-        # Speed
         row = box.row(align=True)
         row.label(text="Speed (mm/s):")
         if obj:
@@ -354,7 +385,6 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         else:
             row.label(text="None")
 
-        # Wait
         row = box.row(align=True)
         row.label(text="Wait time (sec):")
         if obj:
@@ -363,16 +393,19 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         else:
             row.label(text="None")
 
-        # IK Index (based on solution list)
-        row = box.row(align=True)
-        row.label(text="IK Index:")
+        row = box.row()
+        split = row.split(factor=0.45)
+        split.label(text="IK Index:")
         if p.solutions:
-            row.prop(p, "solution_index_ui", text="")
+            right = split.split(factor=0.35)
+            right.prop(p, "solution_index_ui", text="")
+            tail = right.split(factor=0.7)
+            tail.label(text=f"/ {p.max_solutions}")
             if obj:
-                row.operator("object.apply_preview_pose", text="", icon='EXPORT')
+                tail.operator("object.apply_preview_pose", text="", icon='EXPORT')
         else:
-            row.label(text="None")
-        
+            split.label(text="None")
+
         if "kuka" in p.armature.lower():
             row = box.row(align=True)
             row.label(text="R angle (q3)")
@@ -380,107 +413,9 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             sub.scale_x = 1.2
             sub.prop(p, "fixed_q3_deg", text="", slider=True)
 
-        # Stage TCP lists
-        box.separator()
-        box.label(text="🔸 Stage TP Manager")
-
-        row = box.row()
-        row.template_list("UI_UL_stage_tcp_list", "", p, "stage_tcp_sorted_list", p, "stage_tcp_list_index", rows=6)
-
+    def draw_bake_and_pick(self, L, ctx):
         p = ctx.scene.ik_motion_props
-        obj = p.stage_tcp_sorted_list[p.stage_tcp_list_index] if p.stage_tcp_sorted_list and p.stage_tcp_list_index >= 0 else None
-        name = obj.name if obj else ""
-
-        col = row.column(align=True)
-        col.operator("object.refresh_stage_tcp_list", text="", icon='FILE_REFRESH')
-        col.operator("object.stage_tcp_move_up", text="", icon='TRIA_UP')
-        col.operator("object.stage_tcp_move_down", text="", icon='TRIA_DOWN')
-        op = col.operator("object.delete_stage_tcp_point", text="", icon='X')
-        op.name = name
-        col.operator("object.clear_all_stage_tcp_points", text="", icon='TRASH')
-        col.operator("object.add_stage_tcp_point", text="", icon='ADD')
-
-
-        # ───── Stage TCP Property Display (Goal + Joint values) ─────
-        selected = p.stage_tcp_sorted_list[p.stage_tcp_list_index] if p.stage_tcp_sorted_list and p.stage_tcp_list_index >= 0 else None
-        if selected:
-            obj = bpy.data.objects.get(selected.name)
-            if obj:
-                box.separator()
-                box.label(text=f"Selected: {obj.name}", icon='EMPTY_AXIS')
-
-                # Goal
-                goal = obj.get("goal", "")
-                row = box.row(align=True)
-                row.label(text="Goal label:")
-                row.prop(obj, '["goal"]', text="")
-
-                # Joint values
-                try:
-                    joint_values_raw = obj.get("joint_values", {})
-                    joint_values = dict(joint_values_raw)
-                except Exception as e:
-                    print(f"[ERROR] Cannot convert joint_values to dict: {e}")
-                    joint_values = {}
-
-                if joint_values:
-                    box.label(text="Joint Values:")
-                    for i, (joint_name, val) in enumerate(joint_values.items()):
-                        row = box.row(align=True)
-                        row.label(text=f"J{i+1}")
-                        try:
-                            fval = float(val)
-                            if "x" in joint_name or "y" in joint_name or "z" in joint_name:
-                                display_val = f"{fval * 1000:.1f} mm"
-                            elif "rot" in joint_name or "tilt" in joint_name:
-                                display_val = f"{math.degrees(fval):.1f}°"
-                            else:
-                                display_val = f"{fval:.3f}"
-                            row.label(text=f"{joint_name} = {display_val}", icon='BLANK1')
-                        except (ValueError, TypeError):
-                            row.label(text=f"⚠ {joint_name}", icon='ERROR')
-
-
-        # Target Position (always visible)
-        box.separator()
-        box.label(text="🔸 Target Position")
-
-        row = box.row(align=True)
-        row.operator("object.focus_on_target", text="Select", icon='RESTRICT_SELECT_OFF')
-        row.operator("object.snap_target_to_fk", text="to FK", icon='PIVOT_ACTIVE')
-        row.operator("object.snap_goal_to_active", text="to Active", icon='PIVOT_ACTIVE')
-
-        row = box.row(align=True)
-        row.operator("object.preview_goal_pose", text="Preview", icon='HIDE_OFF')
-        row.operator("object.record_goal_pose",  text="Record",  icon='REC')
-
-        row = box.row(align=True)
-        row.operator("object.update_tcp_pose", text="Update", icon='EXPORT')
-        row.operator("object.update_all_tcp_poses", text="Recompute All", icon='FILE_REFRESH')
-
-        if obj:
-            next_idx = obj.get("index", 0) + 1
-            coll = bpy.data.collections.get("Teach data")
-            if coll:
-                tps = sorted(
-                    (o for o in coll.objects if o.name.startswith("P.")),
-                    key=lambda o: o.get("index", 9999)
-                )
-                next_point = next(
-                    (tp for tp in tps if tp.get("index") == next_idx),
-                    None
-                )
-                if next_point:
-                    row = box.row(align=True)
-                    row.label(text=f"Path {obj.name} → {next_point.name}")
-                    row.prop(p, "path_percent", text="", slider=True)
-                    row.operator(
-                        "object.snap_gizmo_on_path",
-                        text="",
-                        icon='RESTRICT_SELECT_OFF'
-                    )
-
-        box.separator()
+        box = L.box()
         box.label(text="🔸 Bake Motion")
 
         row = box.row(align=True)
@@ -500,6 +435,45 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row.operator("object.place_object", text="Place", icon='UNLINKED')
         row.operator("object.clear_dynamic_parent", text="", icon='TRASH')
 
+    def draw_stage_tp_manager(self, L, ctx):
+        p = ctx.scene.ik_motion_props
+        box = L.box()
+        box.label(text="🔸 Stage TP Manager")
+
+        row = box.row()
+        row.template_list("UI_UL_stage_tcp_list", "", p, "stage_tcp_sorted_list", p, "stage_tcp_list_index", rows=4)
+
+        sel_item = p.stage_tcp_sorted_list[p.stage_tcp_list_index] if p.stage_tcp_sorted_list and p.stage_tcp_list_index >= 0 else None
+        sel_name = sel_item.name if sel_item else ""
+        sel_obj = bpy.data.objects.get(sel_name) if sel_name else None
+
+        col = row.column(align=True)
+        col.operator("object.refresh_stage_tcp_list", text="", icon='FILE_REFRESH')
+        col.operator("object.stage_tcp_move_up", text="", icon='TRIA_UP')
+        col.operator("object.stage_tcp_move_down", text="", icon='TRIA_DOWN')
+        op = col.operator("object.delete_stage_tcp_point", text="", icon='X')
+        op.name = sel_name
+        col.operator("object.clear_all_stage_tcp_points", text="", icon='TRASH')
+
+        row = box.row(align=True)
+        if sel_obj:
+            idx = sel_obj.get("index", "?")
+            row.label(text=f"Selected: {sel_obj.name} [#{idx}]", icon='PINNED')
+            row.operator("object.preview_stage_tcp_prev_pose", text="", icon='BACK')
+            row.operator("object.preview_stage_tcp_next_pose", text="", icon='FORWARD')
+        else:
+            row.label(text="Selected: None", icon='PINNED')
+
+        row = box.row(align=True)
+        row.label(text="Goal label:")
+        if sel_obj:
+            row.prop(sel_obj, '["goal"]', text="")
+        else:
+            row.label(text="None")
+
+        row = box.row(align=True)
+        row.operator("object.update_selected_stage_tcp", text="Update", icon='EXPORT')
+
     def draw_stage_jog_section(self, layout, ctx):
         prefs = get_addon_prefs()
         if not prefs.show_stage:
@@ -507,30 +481,30 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         p = ctx.scene.ik_motion_props
         props = ctx.scene.stage_props
         box = layout.box()
-    
-        row = box.row()
-        icon = 'TRIA_DOWN' if p.show_stage else 'TRIA_RIGHT'
-        row.prop(p, "show_stage", icon=icon, text="Stage Jog Mode", emboss=False)
-    
-        if not p.show_stage:
-            return
-    
+        box.label(text="🔸 Stage Jog Mode")
+
         config = ROBOT_CONFIGS.get(p.robot_type, {})
         joints = config.get("stage_joints", [])
         if not joints:
             box.label(text="This robot has no stage joints")
             return
-    
+
         for joint in joints:
             key, label, unit, *_ = joint
             if hasattr(props, key):
                 row = box.row(align=True)
                 row.prop(props, key, text=label, slider=True)
+                row.operator("object.focus_stage_joint", text="", icon='RESTRICT_SELECT_OFF').name = key
                 op = row.operator("object.keyframe_stage_joint", text="", icon='KEY_HLT')
                 op.name = key
-                row.operator("object.focus_stage_joint", text="", icon='RESTRICT_SELECT_OFF').name = key
+                row.operator("object.clear_stage_joint_keys", text="", icon='TRASH').name = key
             else:
                 box.label(text=f"⚠ Missing: {key}")
+
+        row = box.row(align=True)
+        row.operator("object.keyframe_all_stage_joints", text="Keyframe", icon='KEY_HLT')
+        row.operator("object.add_stage_tcp_point",      text="Waypoint", icon='EMPTY_AXIS')
+        row.operator("object.stage_home_preview",       text="Home",     icon='HOME')
 
     def draw_io_section(self, layout, context):
         prefs = get_addon_prefs()
@@ -564,11 +538,11 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         for i, sj in enumerate(cfg.get("stage_joints", [])):
             grid.prop(p, "show_plot_stage_joints", index=i, text=sj[1])
 
-        # Export Data
+        # Plot Graph
         box.separator()
-        box.label(text="🔸 Export Data")
+        box.label(text="🔸 Plot Graph")
         row = box.row()
-        split = row.split(factor=0.6)
+        split = row.split(factor=0.7)
         try:
             import matplotlib.pyplot
             split.operator("rteach.show_joint_graph", text="Plot Graph", icon='IMAGE_DATA')
@@ -576,24 +550,31 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
             split.enabled = False
             split.label(icon='ERROR', text="Plot Graph (requires matplotlib)")
         split.prop(p, "use_cycle", text="Cycle (%)")
-        # Teach Point (JSON)
-        box.label(text="Teach point (JSON)")
+
+        # Import Data (JSON)
+        box.separator()
+        box.label(text="🔸 Import Data")
         row = box.row(align=True)
-        split = row.split(factor=0.7)
+        split = row.split(factor=0.85)
+        split.prop(p, "import_teach_filename", text="")
+        split.operator("object.import_teach_data", text="", icon='IMPORT')
+        
+        row = box.row(align=True)
+        split = row.split(factor=0.85)
+        split.prop(p, "import_joint_csv_filename", text="")
+        split.operator("object.import_joint_csv", text="", icon='IMPORT')
+        # Export Data
+        box.separator()
+        box.label(text="🔸 Export Data")
+        row = box.row(align=True)
+        split = row.split(factor=0.85)
         split.prop(p, "export_teach_filename", text="")
         split.operator("object.export_teach_data", text="", icon='EXPORT')
-        # Time-Series Data (CSV)
-        box.label(text="Time-series data (CSV)")
+
         row = box.row(align=True)
-        split = row.split(factor=0.7)
+        split = row.split(factor=0.85)
         split.prop(p, "export_joint_csv_filename", text="")
         split.operator("object.export_joint_graph_csv", text="", icon='EXPORT')
-        
-        box.separator()
-        box.label(text="🔸 Import Waypoint Data (JSON)")
-        box.prop(p, "export_teach_filename", text="Filename")
-        box.operator("object.import_teach_data", text="Import")
-
 
 classes = [
     UI_UL_tcp_list,
