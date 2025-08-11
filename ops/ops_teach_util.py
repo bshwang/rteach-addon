@@ -7,7 +7,7 @@ import numpy as np
 from rteach.core.robot_presets import ROBOT_CONFIGS
 from rteach.config.settings import delayed_workspace_update
 from rteach.ext import dynamic_parent as dp
-from rteach.core.core import get_tcp_object
+from rteach.core.core import get_tcp_object, get_best_ik_solution
 
 def find_object_by_prefix(name: str) -> bpy.types.Object | None:
     """
@@ -120,29 +120,6 @@ class OBJECT_OT_tcp_delete(bpy.types.Operator):
         ctx.scene.ik_motion_props.status_text = f"Deleted {self.name}"
         update_tcp_sorted_list()
         return {'FINISHED'}
-    
-# ────────────────────────────────────────────────────────────── 
-class OBJECT_OT_reindex_tcp_points(bpy.types.Operator):
-    """Reassign sequential index values to all Waypoints"""
-    bl_idname = "object.reindex_tcp_points"
-    bl_label = "Reindex TCP"
-
-    def execute(self, ctx):
-        objs = bpy.data.collections.get("Teach data", {}).objects
-        if not objs:
-            self.report({'INFO'}, "No Waypoints found")
-            return {'CANCELLED'}
-
-        sorted_objs = sorted(objs, key=lambda o: o.get("index", 9999))
-
-        for i, obj in enumerate(sorted_objs):
-            obj["index"] = i
-
-        props = ctx.scene.ik_motion_props
-        props.selected_teach_point = sorted_objs[0] if sorted_objs else None
-        props.status_text = "Waypoints reindexed"
-
-        return {'FINISHED'}
 
 # ────────────────────────────────────────────────────────────── 
 class OBJECT_OT_clear_all_tcp_points(bpy.types.Operator):
@@ -225,15 +202,18 @@ def update_tcp_sorted_list():
         p.tcp_sorted_list.clear()
         p.selected_teach_point = None
         p.tcp_list_index = -1
+        p.solutions = []
+        p.max_solutions = 0
+        p.current_index = 0
+        p.solution_index_ui = 1
         return
 
     p.tcp_sorted_list.clear()
-
     for obj in sorted(coll.objects, key=lambda o: o.get("index", 9999)):
         if obj.name not in bpy.data.objects:
             continue
         if obj.get("stage"):
-            continue  
+            continue
         item = p.tcp_sorted_list.add()
         item.name = obj.name
 
@@ -242,21 +222,42 @@ def update_tcp_sorted_list():
     if p.selected_teach_point and p.selected_teach_point.name in bpy.data.objects:
         obj = p.selected_teach_point
 
+        T_goal = np.array(obj.matrix_world)
+        q_ref = None
         if "joint_pose" in obj:
-            q_saved = np.asarray(obj["joint_pose"], float)
-            p.solutions = [q_saved]
-            p.max_solutions = 1
-            p.current_index = obj.get("solution_index", 0)
-            p.solution_index_ui = p.current_index + 1
-        else:
-            T_goal = np.array(obj.matrix_world)
-            q_sel, sols = get_best_ik_solution(p, T_goal)
+            try:
+                q_ref = np.asarray(obj["joint_pose"], float)
+            except:
+                q_ref = None
+
+        q_best, sols = get_best_ik_solution(p, T_goal, q_ref=q_ref)
+        if sols:
             p.solutions = [list(map(float, s)) for s in sols]
             p.max_solutions = len(sols)
-            p.current_index = obj.get("solution_index", 0)
-            p.solution_index_ui = p.current_index + 1
+
+            if q_ref is not None and q_best is not None:
+                def ang_diff(a, b):
+                    return ((a - b + np.pi) % (2 * np.pi)) - np.pi
+                def score(i):
+                    return sum(abs(ang_diff(sols[i][j], q_best[j])) for j in range(len(q_best)))
+                best_idx = int(np.argmin([score(i) for i in range(len(sols))]))
+            else:
+                best_idx = int(obj.get("solution_index", 0))
+                best_idx = max(0, min(best_idx, len(sols) - 1))
+
+            p.current_index = best_idx
+            p.solution_index_ui = best_idx + 1
+        else:
+            p.solutions = []
+            p.max_solutions = 0
+            p.current_index = 0
+            p.solution_index_ui = 1
     else:
         p.selected_teach_point = None
+        p.solutions = []
+        p.max_solutions = 0
+        p.current_index = 0
+        p.solution_index_ui = 1
 
     bpy.context.area.tag_redraw()
 
@@ -339,48 +340,53 @@ class OBJECT_OT_refresh_tcp_list(bpy.types.Operator):
     bl_label = "Refresh TCP List"
 
     def execute(self, ctx):
-        update_tcp_sorted_list()
-
         coll = bpy.data.collections.get("Teach data")
         if not coll:
             self.report({'ERROR'}, "Teach data collection not found")
             return {'CANCELLED'}
 
+        p = ctx.scene.ik_motion_props
+        prev_sel = p.selected_teach_point
+
+        objs = [o for o in coll.objects if not o.get("stage")]
+        if not objs:
+            update_tcp_sorted_list()
+            self.report({'INFO'}, "No Waypoints found")
+            return {'FINISHED'}
+        objs.sort(key=lambda o: (o.get("index", 1_000_000), o.name))
+
         name_counter = {}
-        all_objs = [obj for obj in coll.objects if not obj.get("stage")]
-        all_objs = sorted(all_objs, key=lambda o: o.get("index", 0))
-
-        print("\n===== [TCP RENAME LOG] =====")
-        for i, obj in enumerate(all_objs):
-            goal = obj.get("goal", "").strip() or "GOAL"
-            robot_key = obj.get("robot_key", "").lower()
-
-            if "left" in robot_key:
-                side = "L"
-            elif "right" in robot_key:
-                side = "R"
-            else:
-                side = "X"
+        final_names = []
+        for i, obj in enumerate(objs):
+            goal = (obj.get("goal", "") or "").strip() or "GOAL"
+            rk = (obj.get("robot_key", "") or "").lower()
+            side = "L" if "left" in rk else ("R" if "right" in rk else "X")
 
             key = (goal, side)
-            name_counter.setdefault(key, 0)
-            name_counter[key] += 1
+            name_counter[key] = name_counter.get(key, 0) + 1
             seq = name_counter[key]
+            final_names.append(f"{goal}_{side}_{seq:02d}")
 
-            new_name = f"{goal}_{side}_{seq:02d}"
             obj["index"] = i
+            if "bake_enabled" not in obj:
+                obj["bake_enabled"] = True
 
-            if obj.name != new_name:
-                print(f"[{i+1:02}] RENAME {obj.name} → {new_name}")
-                obj.name = new_name
-            else:
-                print(f"[{i+1:02}] OK      {obj.name}")
+        for i, obj in enumerate(objs):
+            obj.name = f"__TMP_RTCP__{i:04d}"
+        for obj, new_name in zip(objs, final_names):
+            obj.name = new_name
 
-        print("===== [TCP RENAME DONE] =====\n")
+        update_tcp_sorted_list()
+
+        if prev_sel:
+            for i, it in enumerate(p.tcp_sorted_list):
+                if it.name == prev_sel.name:
+                    p.tcp_list_index = i
+                    break
 
         self.report({'INFO'}, "TCP list refreshed, renamed, and re-indexed")
         return {'FINISHED'}
-    
+
 # ──────────────────────────────────────────────────────────────     
 class OBJECT_OT_cycle_armature_set(bpy.types.Operator):
     bl_idname = "object.cycle_armature_set"
@@ -580,7 +586,6 @@ classes = (
     OBJECT_OT_tcp_move_up,
     OBJECT_OT_tcp_move_down,
     OBJECT_OT_tcp_delete,
-    OBJECT_OT_reindex_tcp_points,
     OBJECT_OT_clear_all_tcp_points,
     OBJECT_OT_snap_goal_to_active,
     OBJECT_OT_focus_on_target,
