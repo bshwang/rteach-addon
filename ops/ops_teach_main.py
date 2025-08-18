@@ -7,7 +7,7 @@ from scipy.spatial.transform import Rotation as R, Slerp
 from rteach.core.robot_state import get_armature_type
 from rteach.core.core import (
     apply_solution, get_inverse_kinematics, compute_base_matrix, 
-    compute_tcp_offset_matrix, get_forward_kinematics, 
+    compute_tcp_offset_matrix, get_forward_kinematics, safe_ik_solve,
     get_BONES, get_AXES, get_best_ik_solution, get_joint_limits
 )
 from rteach.core.core_iiwa import linear_move
@@ -27,6 +27,33 @@ class OBJECT_OT_teach_pose(bpy.types.Operator):
         print("[DEBUG] Armature:", p.armature)
         print(f"[DEBUG] UI fixed_q3 (rad): {round(p.fixed_q3, 6)} ({round(math.degrees(p.fixed_q3), 2)}°)")
 
+        try:
+            from rteach.robot_presets import ROBOT_CONFIGS
+            cfg = ROBOT_CONFIGS.get(p.robot_type.lower(), {})
+            arm_map = cfg.get("armature_solver_map", {})
+            solver_key = arm_map.get(p.armature, "?")
+            print(f"[CFG] robot_type={p.robot_type}, solver_key={solver_key}")
+        except Exception as e:
+            print(f"[CFG] preset load failed: {e}")
+            cfg = {}
+
+        if cfg:
+            stage_list = cfg.get("stage_joints", [])
+            for sj in stage_list:
+                key, label, unit, _minv, _maxv, axis, joint_type = sj
+                obj = bpy.data.objects.get(key)
+                if not obj:
+                    print(f"[STAGE] {key}: <not found>")
+                    continue
+                idx = {"x":0,"y":1,"z":2}[axis]
+                if joint_type == "rotation":
+                    val = math.degrees(obj.rotation_euler[idx])
+                    u = "deg"
+                else:
+                    val = obj.location[idx] * (1000.0 if unit == "mm" else 1.0)
+                    u = "mm" if unit == "mm" else unit
+                print(f"[STAGE] {key}: {joint_type}.{axis} = {val:.3f} {u}")
+
         q = tgt.matrix_world.to_quaternion()
         T_goal = np.eye(4)
         T_goal[:3, :3] = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
@@ -34,22 +61,41 @@ class OBJECT_OT_teach_pose(bpy.types.Operator):
 
         print("[DEBUG] T_goal matrix:")
         for row in T_goal:
-            print("  ", [round(v, 4) for v in row])
-        print("[DEBUG] T_goal position:", [round(v, 4) for v in tgt.location])
+            print("  ", [round(float(v), 6) for v in row])
+        print("[DEBUG] T_goal position:", [round(float(v), 6) for v in tgt.location])
         print("[DEBUG] T_goal rotation (deg):", [round(math.degrees(a), 2) for a in tgt.rotation_euler])
 
-        ik_solver = get_inverse_kinematics(p)
         T_base = compute_base_matrix(p)
         T_offset = compute_tcp_offset_matrix(p)
+
+        print("[BASE] T_base:")
+        for row in T_base:
+            print("  ", [round(float(v), 6) for v in row])
+
+        print("[OFFSET] T_offset:")
+        for row in T_offset:
+            print("  ", [round(float(v), 6) for v in row])
+
+        base_obj = getattr(p, "base_object", None)
+        if base_obj:
+            print(f"[BASE] base_object: {base_obj.name}")
+            Mw = np.array(base_obj.matrix_world)
+            print("[BASE] base_object.matrix_world:")
+            for row in Mw:
+                print("  ", [round(float(v), 6) for v in row])
+
         T_flange = np.linalg.inv(T_base) @ T_goal @ np.linalg.inv(T_offset)
 
-        print("[DEBUG] T_flange matrix (IK input):")
+        print("[CHAIN] T_flange = inv(T_base) @ T_goal @ inv(T_offset):")
         for row in T_flange:
-            print("  ", [round(v, 4) for v in row])
+            print("  ", [round(float(v), 6) for v in row])
 
-        sols = ik_solver(T_flange)
+        T_recon = T_base @ T_flange @ T_offset
+        recon_err = float(np.linalg.norm(T_goal - T_recon))
+        print(f"[CHAIN] recon_error = {recon_err:.6e}")
 
-        print(f"[DEBUG] Raw IK solutions: {len(sols)}")
+        sols = safe_ik_solve(p, T_flange, T_goal)
+        print(f"[DEBUG] Raw/Recovered IK solutions: {len(sols)}")
 
         joint_limits = get_joint_limits()
         ll = np.radians([lim[0] for lim in joint_limits])
@@ -59,21 +105,22 @@ class OBJECT_OT_teach_pose(bpy.types.Operator):
             print(f"  j{i+1}: {a}° ~ {b}°")
 
         valid_sols = []
-        for i, q in enumerate(sols):
-            out_of_bounds = [(j+1, math.degrees(q[j])) for j in range(len(q)) if q[j] < ll[j] or q[j] > ul[j]]
-            if not out_of_bounds:
-                valid_sols.append(q)
+        for i, qv in enumerate(sols):
+            oob = [(j+1, math.degrees(qv[j])) for j in range(len(qv)) if qv[j] < ll[j] or qv[j] > ul[j]]
+            if not oob:
+                valid_sols.append(np.array(qv, dtype=float))
             else:
-                print(f"[WARN] sol[{i}] exceeds limits: {[f'j{j}={round(val,1)}°' for j, val in out_of_bounds]}")
+                print(f"[WARN] sol[{i}] exceeds limits: {[f'j{j}={round(val,1)}°' for j, val in oob]}")
 
-        print(f"[DEBUG] Valid IK solutions after joint-limit filtering: {len(valid_sols)}")
-
-        if not valid_sols:
+        if valid_sols:
+            print(f"[DEBUG] Valid IK solutions: {len(valid_sols)}")
+            for i, qv in enumerate(valid_sols):
+                print(f"  sol[{i}] (deg): {[round(math.degrees(a),2) for a in qv]}")
+        else:
             print("[RESULT] No valid IK solutions found.")
             p.status_text = "IK failed: no valid solutions"
             return {'FINISHED'}
 
-        # 기존 가장 가까운 해 선택 로직 유지
         q_prev = p.solutions[p.current_index] if p.solutions and len(p.solutions) > p.current_index else None
         if not q_prev:
             arm = bpy.data.objects.get(p.armature)
@@ -113,6 +160,10 @@ class OBJECT_OT_teach_pose(bpy.types.Operator):
         T_fk = fk_func(q_sel)
         T_fk_world = compute_base_matrix(p) @ T_fk @ compute_tcp_offset_matrix(p)
 
+        print("[VERIFY] T_fk_world = T_base @ T_fk @ T_offset:")
+        for row in T_fk_world:
+            print("  ", [round(float(v), 6) for v in row])
+
         pos_fk = T_fk_world[:3, 3] * 1000
         rot_fk = Matrix(T_fk_world[:3, :3]).to_euler('XYZ')
         rot_fk_deg = [math.degrees(a) for a in rot_fk]
@@ -121,7 +172,7 @@ class OBJECT_OT_teach_pose(bpy.types.Operator):
         rot_goal = Matrix(T_goal[:3, :3]).to_euler('XYZ')
         rot_goal_deg = [math.degrees(a) for a in rot_goal]
 
-        print("[DEBUG] FK vs Target comparison")
+        print("[VERIFY] FK vs Target")
         print(f"  Target Pos (mm): {np.round(pos_goal,2)}")
         print(f"  FK Pos     (mm): {np.round(pos_fk,2)}")
         print(f"  Target Rot (°):  {[round(v,2) for v in rot_goal_deg]}")
@@ -279,12 +330,24 @@ class OBJECT_OT_record_tcp_point(bpy.types.Operator):
         if coll.name not in {c.name for c in ctx.scene.collection.children}:
             ctx.scene.collection.children.link(coll)
 
-        T_goal = np.array(tgt.matrix_world)
-        q_sel, sols = get_best_ik_solution(p, T_goal)
+        q_sel = None
+        sols  = []
+
+        if getattr(p, "solutions", None) and len(p.solutions) > 0:
+            idx_ui = getattr(p, "current_index", 0)
+            idx = max(0, min(idx_ui, len(p.solutions)-1))
+            q_sel = np.asarray(p.solutions[idx], dtype=float).reshape(-1)
+            sols  = [np.asarray(s, dtype=float).reshape(-1) for s in p.solutions]
+            print(f"[RECORD] Using existing preview IK: {len(sols)} sols, sel={idx+1}/{len(sols)}")
+        else:
+            T_goal = np.array(tgt.matrix_world)
+            q_sel, sols = get_best_ik_solution(p, T_goal)
+            print(f"[RECORD] Recomputed IK: {0 if sols is None else len(sols)} sols")
+
         if not sols or q_sel is None:
             p.status_text = "IK failed (skipped)"
             print("[RECORD] IK failed → skip recording")
-            return {'CANCELLED'}  
+            return {'CANCELLED'}
 
         arm = bpy.data.objects.get(p.armature)
         if arm:
@@ -332,11 +395,17 @@ class OBJECT_OT_record_tcp_point(bpy.types.Operator):
 
         coll.objects.link(dup)
 
-        prev_solutions = p.solutions[:]
-        prev_idx       = p.current_index
+        prev_solutions      = p.solutions[:]
+        prev_idx            = p.current_index
+        prev_max_solutions  = len(prev_solutions)
+        prev_ui             = prev_idx + 1
+
         update_tcp_sorted_list()
-        p.solutions     = prev_solutions
-        p.current_index = prev_idx
+
+        p.solutions         = prev_solutions
+        p.current_index     = prev_idx
+        p.max_solutions     = prev_max_solutions
+        p.solution_index_ui = prev_ui
 
         p.selected_teach_point = dup
         p.tcp_list_index       = len(p.tcp_sorted_list) - 1
@@ -408,9 +477,10 @@ class OBJECT_OT_bake_teach_sequence(bpy.types.Operator):
             return {'CANCELLED'}
 
         tps = sorted(
-            (o for o in coll.objects if o.name.startswith("P.") and o.get("bake_enabled", False)),
+            (o for o in coll.objects if not o.get("stage") and o.get("bake_enabled", False)),
             key=lambda o: o.get("index", 9999)
         )
+
         if not tps:
             self.report({'WARNING'}, "No TCPs selected for baking")
             return {'CANCELLED'}
