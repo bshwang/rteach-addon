@@ -130,7 +130,8 @@ class OBJECT_OT_clear_all_tcp_points(bpy.types.Operator):
         coll = bpy.data.collections.get("Teach data")
         if coll:
             for ob in list(coll.objects):
-                bpy.data.objects.remove(ob, do_unlink=True)
+                if not ob.get("stage"):
+                    bpy.data.objects.remove(ob, do_unlink=True)
 
         path_coll = bpy.data.collections.get("Teach path")
         if path_coll:
@@ -139,10 +140,13 @@ class OBJECT_OT_clear_all_tcp_points(bpy.types.Operator):
                     bpy.data.objects.remove(ob, do_unlink=True)
 
         props = ctx.scene.ik_motion_props
-        props.selected_teach_point = None        
-
+        props.selected_teach_point = None
         if props.goal_object and props.goal_object.name not in bpy.data.objects:
-            props.goal_object = None               
+            props.goal_object = None
+
+        update_tcp_sorted_list()
+        if bpy.context.area:
+            bpy.context.area.tag_redraw()
 
         props.status_text = "All Waypoints and Path cleared"
         return {'FINISHED'}
@@ -340,51 +344,53 @@ class OBJECT_OT_refresh_tcp_list(bpy.types.Operator):
     bl_label = "Refresh TCP List"
 
     def execute(self, ctx):
+        p = ctx.scene.ik_motion_props
+
+        prev_obj = None
+        if p.tcp_sorted_list and 0 <= p.tcp_list_index < len(p.tcp_sorted_list):
+            prev_name = p.tcp_sorted_list[p.tcp_list_index].name
+            prev_obj = bpy.data.objects.get(prev_name)
+
         coll = bpy.data.collections.get("Teach data")
         if not coll:
             self.report({'ERROR'}, "Teach data collection not found")
             return {'CANCELLED'}
 
-        p = ctx.scene.ik_motion_props
-        prev_sel = p.selected_teach_point
-
         objs = [o for o in coll.objects if not o.get("stage")]
-        if not objs:
-            update_tcp_sorted_list()
-            self.report({'INFO'}, "No Waypoints found")
-            return {'FINISHED'}
-        objs.sort(key=lambda o: (o.get("index", 1_000_000), o.name))
+        objs = sorted(objs, key=lambda o: o.get("index", 0))
 
         name_counter = {}
-        final_names = []
         for i, obj in enumerate(objs):
-            goal = (obj.get("goal", "") or "").strip() or "GOAL"
-            rk = (obj.get("robot_key", "") or "").lower()
-            side = "L" if "left" in rk else ("R" if "right" in rk else "X")
+            obj["index"] = i
+            if obj.get("name_preserve", False):
+                continue
 
-            key = (goal, side)
+            goal = (obj.get("goal", "") or "GOAL").strip()
+            robkey = (obj.get("robot_key", "") or "").lower()
+            key = (goal, robkey)
             name_counter[key] = name_counter.get(key, 0) + 1
             seq = name_counter[key]
-            final_names.append(f"{goal}_{side}_{seq:02d}")
 
-            obj["index"] = i
-            if "bake_enabled" not in obj:
-                obj["bake_enabled"] = True
+            base = f"{goal}_{robkey}" if robkey else goal
+            new_name = base if seq == 1 else f"{base}_{seq:02d}"
+            if obj.name != new_name:
+                obj.name = new_name
 
-        for i, obj in enumerate(objs):
-            obj.name = f"__TMP_RTCP__{i:04d}"
-        for obj, new_name in zip(objs, final_names):
-            obj.name = new_name
+        try:
+            update_tcp_sorted_list()
+        except Exception as e:
+            print(f"[TCP][WARN] update_tcp_sorted_list failed: {e}")
 
-        update_tcp_sorted_list()
-
-        if prev_sel:
+        if prev_obj and prev_obj.name in [it.name for it in p.tcp_sorted_list]:
             for i, it in enumerate(p.tcp_sorted_list):
-                if it.name == prev_sel.name:
+                if it.name == prev_obj.name:
                     p.tcp_list_index = i
                     break
 
-        self.report({'INFO'}, "TCP list refreshed, renamed, and re-indexed")
+        if hasattr(ctx, "area") and ctx.area:
+            ctx.area.tag_redraw()
+
+        self.report({'INFO'}, "TCP list refreshed")
         return {'FINISHED'}
 
 # ──────────────────────────────────────────────────────────────     
