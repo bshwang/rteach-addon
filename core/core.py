@@ -1,9 +1,11 @@
 import math
 import bpy
+import os, sys, tempfile, io, re
+
 import numpy as np
 from math import pi
 from scipy.spatial.transform import Rotation as R
-
+    
 from rteach.core.robot_presets import ROBOT_CONFIGS
 from rteach.core.robot_state import get_armature_type
 from rteach.core.core_ur import forward_kinematics as fk_ur, inverse_kinematics as ik_ur
@@ -214,66 +216,47 @@ def solve_and_apply(ctx, p, T_goal, frame, insert_keyframe=True):
     return True
 
 def get_best_ik_solution(p, T_goal, q_ref=None):
-    T_base = compute_base_matrix(p)
+    T_base   = compute_base_matrix(p)
     T_offset = compute_tcp_offset_matrix(p)
     T_flange = np.linalg.inv(T_base) @ T_goal @ np.linalg.inv(T_offset)
 
     print("[IK] Solving IK for T_goal:")
     for row in T_goal:
-        print("  ", [round(v, 4) for v in row])
+        print("  ", [np.round(float(v), 4) for v in row])
 
-    ik_solver = get_inverse_kinematics(p)
-    sols = ik_solver(T_flange)
+    sols = safe_ik_solve(p, T_flange, T_goal)
     if not sols:
         print("[IK] No IK solution found.")
         return None, []
 
-    joint_limits = get_joint_limits()
-    ll = np.radians([lim[0] for lim in joint_limits])
-    ul = np.radians([lim[1] for lim in joint_limits])
-
-    sols = [q for q in sols if np.all(q >= ll) and np.all(q <= ul)]
-
     print(f"[IK] Valid IK solutions: {len(sols)}")
     for i, q in enumerate(sols):
-        q_deg = [round(math.degrees(a), 2) for a in q]
-        print(f"  sol[{i}] = {q_deg}")
-
-    if not sols:
-        print("[IK] All solutions out of joint limits.")
-        return None, []
+        print(f"  sol[{i}] (deg): {[round(math.degrees(a),2) for a in q]}")
 
     def ang_diff(a, b):
-        return ((a - b + pi) % (2 * pi)) - pi
+        return ((a - b + math.pi) % (2 * math.pi)) - math.pi
 
     if q_ref is not None:
-        best = min(
+        idx = min(
             range(len(sols)),
             key=lambda i: sum(
                 abs(ang_diff(sols[i][j], q_ref[j]))
                 for j in range(min(len(sols[i]), len(q_ref)))
             )
         )
-        print(f"[IK] q_ref-based match: best = {best}")
     elif get_armature_type(p.robot_type) == "UR":
         ss = -1 if p.shoulder == 'L' else 1
-        es = -1 if p.elbow == 'U' else 1
-        ws = -1 if p.wrist == 'I' else 1
-
+        es = -1 if p.elbow   == 'U' else 1
+        ws = -1 if p.wrist   == 'I' else 1
         def score(q):
             return ((math.copysign(1, q[0]) == ss) +
                     (math.copysign(1, q[2]) == es) +
                     (math.copysign(1, q[4]) == ws))
-        best = max(range(len(sols)), key=lambda i: score(sols[i]))
-        print(f"[IK] Shoulder/Elbow/Wrist preference match: best = {best}")
+        idx = max(range(len(sols)), key=lambda i: score(sols[i]))
     else:
-        best = 0
-        print(f"[IK] Defaulting to first solution: best = {best}")
+        idx = 0
 
-    q_best = sols[best]
-    q_best_deg = [round(math.degrees(a), 2) for a in q_best]
-    print(f"[IK] Selected solution: {q_best_deg}")
-
+    q_best = sols[idx]
     return q_best, sols
 
 def get_tcp_object():
@@ -289,3 +272,79 @@ def get_stage_joint_names(rob_key, rob_key_to_config_key):
     config = ROBOT_CONFIGS.get(preset_key, {})
     return [joint[0] for joint in config.get("stage_joints", [])] 
 
+def safe_ik_solve(p, T_flange, T_goal):
+    fk_func = get_forward_kinematics()
+    T_base = compute_base_matrix(p)
+    T_offset = compute_tcp_offset_matrix(p)
+    ik_solver = get_inverse_kinematics(p)
+
+    def _call_with_fd_capture(fn, *args, **kwargs):
+        try:
+            stdout_fd = sys.stdout.fileno()
+            stderr_fd = sys.stderr.fileno()
+        except Exception:
+            buf = io.StringIO()
+            from contextlib import redirect_stdout, redirect_stderr
+            with redirect_stdout(buf), redirect_stderr(buf):
+                try:
+                    _ = fn(*args, **kwargs)
+                except Exception:
+                    pass
+            return buf.getvalue()
+        with tempfile.TemporaryFile(mode="w+b") as tmp:
+            saved_out = os.dup(stdout_fd)
+            saved_err = os.dup(stderr_fd)
+            try:
+                os.dup2(tmp.fileno(), stdout_fd)
+                os.dup2(tmp.fileno(), stderr_fd)
+                try:
+                    _ = fn(*args, **kwargs)
+                except Exception:
+                    pass
+                os.fsync(tmp.fileno())
+                tmp.seek(0)
+                data = tmp.read().decode("utf-8", errors="ignore")
+            finally:
+                os.dup2(saved_out, stdout_fd)
+                os.dup2(saved_err, stderr_fd)
+                os.close(saved_out)
+                os.close(saved_err)
+        return data
+
+    sols = ik_solver(T_flange)
+    if sols:
+        return sols
+
+    text = _call_with_fd_capture(ik_solver, T_flange)
+
+    qs = []
+    for line in text.splitlines():
+        if "Detected and filtered incorrect IK solution" in line:
+            m = re.search(r"Detected and filtered incorrect IK solution:\s+([0-9eE\+\-\. ]+)", line)
+            if not m:
+                continue
+            nums = [float(x) for x in m.group(1).strip().split()]
+            if len(nums) >= 6:
+                qs.append(nums[:6])
+
+    print(f"[IKCAP] parsed_from_pyd={len(qs)}")
+
+    valid = []
+    if qs:
+        joint_limits = get_joint_limits()
+        ll = np.radians([lim[0] for lim in joint_limits])
+        ul = np.radians([lim[1] for lim in joint_limits])
+
+        for q in qs:
+            qv = np.array(q, dtype=float)
+            if np.any(qv < ll) or np.any(qv > ul):
+                continue
+            T_fk = fk_func(qv)
+            err_base = float(np.linalg.norm(T_fk - T_flange))
+            T_fk_world = T_base @ T_fk @ T_offset
+            err_world = float(np.linalg.norm(T_fk_world - T_goal))
+            print(f"[IKCAP] err_base={err_base:.3e}, err_world={err_world:.3e} q_deg={[round(math.degrees(a),2) for a in qv]}")
+            if err_base <= 1e-4 or err_world <= 1e-4:
+                valid.append(qv)
+
+    return valid
