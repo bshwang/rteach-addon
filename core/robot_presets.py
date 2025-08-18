@@ -86,11 +86,11 @@ ROBOT_CONFIGS = {
             ("joint_z", "Stage_Z", "mm", 0, 680, "z", "location"),
             ("joint_rot", "Holder_Rot", "deg", -90, 90, "z", "rotation"),
             ("joint_tilt", "Holder_Tilt", "deg", 0, 60, "x", "rotation"),
-            ("joint_btfinger", "TCG_BTF", "mm", 0, 45, "y", "location"),
-            ("joint_socket", "TCG_Socket", "deg", -900, 900, "z", "rotation"),
-            ("joint_ncfinger", "NCG_NCF", "deg", -900, 900, "z", "rotation"),
-            ("joint_hin", "H_in", "mm", 0, 10, "x", "location"),
-            ("joint_hout", "H_out", "mm", 0, 10, "x", "location"),
+            #("joint_btfinger", "TCG_BTF", "mm", 0, 45, "y", "location"),
+            #("joint_socket", "TCG_Socket", "deg", -900, 900, "z", "rotation"),
+            #("joint_ncfinger", "NCG_NCF", "deg", -900, 900, "z", "rotation"),
+            #("joint_hin", "H_in", "mm", 0, 10, "x", "location"),
+            #("joint_hout", "H_out", "mm", 0, 10, "x", "location"),
         ],
         "setup_objects": {
             "goal": "Target_Gizmo",
@@ -123,7 +123,7 @@ ROBOT_CONFIGS = {
         "joint_limits_deg": [[-360, 360]] * 6,
         "stage_joints": [
             ("joint_elevation", "Elevation", "mm", 0, 250, "z", "location"),
-            ("joint_rotation", "Rotation", "deg", -180, 180, "z", "rotation"),
+            ("joint_rotation", "Rotation", "deg", -170, 170, "z", "rotation"),
             ("joint_linear", "Linear", "mm", -170, 170, "x", "location"),
             ("joint_ots", "Outtrigger", "mm", -40, 0, "z", "location")
         ],
