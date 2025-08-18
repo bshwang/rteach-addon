@@ -272,6 +272,7 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         row = box.row(align=True)
         row.operator("object.update_tcp_pose",      text="Update",        icon='EXPORT')
         row.operator("object.update_all_tcp_poses", text="Recompute All", icon='FILE_REFRESH')
+        row.operator("object.update_tp_from_jointpose", text="Update f/ Joint", icon='RECOVER_LAST')
 
         row = box.row(align=True)
         row.prop(p, "bake_start_frame", text="Start Frame")
@@ -563,6 +564,13 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         split = row.split(factor=0.85)
         split.prop(p, "import_joint_csv_filename", text="")
         split.operator("object.import_joint_csv", text="", icon='IMPORT')
+
+        # PMBot Beta Import
+        row = box.row(align=True)
+        row.operator("object.import_pmbot_beta_data", text="Import PMBot Beta", icon='IMPORT')
+        row = box.row(align=True)
+        row.operator("object.bake_keyframes_from_pmbot_xml", text="Bake Keyframes from PMBot XML", icon='KEY_HLT')
+
         # Export Data
         box.separator()
         box.label(text="🔸 Export Data")
