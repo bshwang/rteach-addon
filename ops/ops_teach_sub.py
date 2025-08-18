@@ -2,7 +2,7 @@ import bpy
 import math
 import numpy as math
 
-from mathutils import Matrix, Euler
+from mathutils import Matrix, Euler, Vector, Quaternion
 from rteach.core.robot_state import get_armature_type
 from rteach.core.core import (
     compute_base_matrix, compute_tcp_offset_matrix, get_forward_kinematics, get_BONES, get_AXES, get_robot_config
@@ -317,9 +317,6 @@ class OBJECT_OT_snap_target_to_fk(bpy.types.Operator):
     bl_label = "Snap Target to FK"
 
     def execute(self, ctx):
-        import math
-        from mathutils import Matrix, Euler
-
         p = ctx.scene.ik_motion_props
         arm = bpy.data.objects.get(p.armature)
         goal = p.goal_object
@@ -345,13 +342,15 @@ class OBJECT_OT_snap_target_to_fk(bpy.types.Operator):
             print(f"[DEBUG] Bone {bn}: {axis} = {math.degrees(angle):.2f}°")
 
         fk_func = get_forward_kinematics()
-        T = fk_func(q)
+        T_fk = fk_func(q)
+        _print = lambda tag, M: print(tag, [ [round(float(v),6) for v in row] for row in M ])
 
-        print("[DEBUG] FK result matrix:")
-        for row in T:
-            print("   ", [round(v, 4) for v in row])
+        _print("[DEBUG] FK result matrix:", T_fk)
 
-        T_full = compute_base_matrix(p) @ T @ compute_tcp_offset_matrix(p)
+        T_base   = compute_base_matrix(p)
+        T_offset = compute_tcp_offset_matrix(p)
+        T_full   = T_base @ T_fk @ T_offset
+
         goal.matrix_world = Matrix(T_full)
 
         pos = T_full[:3, 3] * 1000
@@ -361,9 +360,33 @@ class OBJECT_OT_snap_target_to_fk(bpy.types.Operator):
         print(f"[DEBUG] Target snapped to FK position (mm): {pos.round(2)}")
         print(f"[DEBUG] FK orientation (deg): Rx={rot_deg[0]:.2f}°, Ry={rot_deg[1]:.2f}°, Rz={rot_deg[2]:.2f}°")
 
+        _print("[DEBUG] T_base:", T_base)
+        _print("[DEBUG] T_offset:", T_offset)
+        _print("[DEBUG] T_full = T_base @ T_fk @ T_offset:", T_full)
+
+        cfg = ROBOT_CONFIGS.get(p.robot_type.lower(), {})
+        arm_map = cfg.get("armature_solver_map", {})
+        solver_key = arm_map.get(p.armature, "?")
+        print(f"[DEBUG] solver_key={solver_key}")
+
+        for sj in cfg.get("stage_joints", []):
+            key, label, unit, _minv, _maxv, axis, joint_type = sj
+            obj = bpy.data.objects.get(key)
+            if not obj:
+                print(f"[STAGE] {key}: <not found>")
+                continue
+            idx = {"x":0,"y":1,"z":2}[axis]
+            if joint_type == "rotation":
+                val = math.degrees(obj.rotation_euler[idx])
+                u = "deg"
+            else:
+                val = obj.location[idx] * (1000.0 if unit == "mm" else 1.0)
+                u = "mm" if unit == "mm" else unit
+            print(f"[STAGE] {key}: {joint_type}.{axis} = {val:.3f} {u}")
+
         p.status_text = "Target snapped to FK"
         return {'FINISHED'}
-    
+
 # ──────────────────────────────────────────────────────────────    
 class OBJECT_OT_add_stage_tcp_point(bpy.types.Operator):
     bl_idname = "object.add_stage_tcp_point"
@@ -504,10 +527,12 @@ class OBJECT_OT_refresh_stage_tcp_list(bpy.types.Operator):
             name_counter[key] = name_counter.get(key, 0) + 1
             seq = name_counter[key]
 
-            new_name = f"{goal}_{side}_{seq:02d}"
+            if not obj.get("name_preserve", False):
+                new_name = f"{goal}_{side}_{seq:02d}"
+                if obj.name != new_name:
+                    obj.name = new_name
+
             obj["index"] = i
-            if obj.name != new_name:
-                obj.name = new_name
 
         update_stage_tcp_sorted_list()
 
@@ -858,6 +883,137 @@ class OBJECT_OT_preview_stage_tcp_pose(bpy.types.Operator):
         p.selected_stage_tcp = obj
         return {'FINISHED'}
 
+class OBJECT_OT_update_tp_from_jointpose(bpy.types.Operator):
+    bl_idname = "object.update_tp_from_jointpose"
+    bl_label = "Update TP from JointPose"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    update_all: bpy.props.BoolProperty(name="Update All", default=False)
+    use_fk: bpy.props.BoolProperty(name="Use FK if available", default=True)
+    also_refresh_lists: bpy.props.BoolProperty(name="Refresh Lists", default=True)
+    try_update_all_tcp_poses: bpy.props.BoolProperty(name="Call update_all_tcp_poses()", default=False)
+
+    def list16_to_matrix(self, L):
+        return Matrix(((L[0], L[1], L[2], L[3]),
+                       (L[4], L[5], L[6], L[7]),
+                       (L[8], L[9], L[10], L[11]),
+                       (L[12], L[13], L[14], L[15])))
+
+    def build_matrix_from_locquat(self, lp, lq):
+        T = Matrix.Translation(Vector((float(lp[0]), float(lp[1]), float(lp[2]))))
+        Q = Quaternion((float(lq[0]), float(lq[1]), float(lq[2]), float(lq[3])))
+        return T @ Q.to_matrix().to_4x4()
+
+    def try_fk_local(self, robot_key: str, q_list: list):
+        try:
+            import importlib
+            cand = [
+                ("rteach.core_ur", "fk_ur"),
+                ("rteach.core_ur", "forward_kinematics"),
+                ("rteach.core.core_ur", "fk_ur"),
+                ("rteach.core.core_ur", "forward_kinematics"),
+            ]
+            for mod_name, fn_name in cand:
+                try:
+                    mod = importlib.import_module(mod_name)
+                    fn = getattr(mod, fn_name, None)
+                    if callable(fn):
+                        try:
+                            M = fn(q_list, robot_key)
+                        except TypeError:
+                            M = fn(q_list)
+                        if hasattr(M, "__getitem__"):
+                            return Matrix(((M[0][0], M[0][1], M[0][2], M[0][3]),
+                                           (M[1][0], M[1][1], M[1][2], M[1][3]),
+                                           (M[2][0], M[2][1], M[2][2], M[2][3]),
+                                           (0.0, 0.0, 0.0, 1.0)))
+                except Exception as e:
+                    print(f"[TP-UPD][FK] provider {mod_name}.{fn_name} failed: {e}")
+        except Exception as e:
+            print(f"[TP-UPD][FK] import failed: {e}")
+        return None
+
+    def execute(self, ctx):
+        scene = ctx.scene
+        p = scene.ik_motion_props
+
+        coll = bpy.data.collections.get("Teach data")
+        if not coll:
+            self.report({'ERROR'}, "Teach data collection not found")
+            return {'CANCELLED'}
+
+        if self.update_all:
+            targets = [o for o in coll.objects if not o.get("stage")]
+        else:
+            targets = []
+            if p.tcp_sorted_list and 0 <= p.tcp_list_index < len(p.tcp_sorted_list):
+                name = p.tcp_sorted_list[p.tcp_list_index].name
+                obj = bpy.data.objects.get(name)
+                if obj and not obj.get("stage"):
+                    targets.append(obj)
+
+        if not targets:
+            self.report({'WARNING'}, "No target TP found")
+            return {'CANCELLED'}
+
+        count = 0
+        for obj in targets:
+            base_name = obj.get("base_name", "")
+            base = bpy.data.objects.get(base_name) if base_name else None
+            if not base:
+                print(f"[TP-UPD][WARN] Base not found for {obj.name}: {base_name}")
+                continue
+
+            T_local = None
+
+            if self.use_fk:
+                q = obj.get("joint_pose", None)
+                if q and isinstance(q, (list, tuple)) and len(q) >= 6:
+                    T_fk = self.try_fk_local(obj.get("robot_key", ""), list(map(float, q)))
+                    if T_fk:
+                        T_local = T_fk
+                        print(f"[TP-UPD][FK] Using FK for {obj.name}")
+
+            if T_local is None:
+                L = obj.get("local_mx_import", None)
+                if L and isinstance(L, (list, tuple)) and len(L) == 16:
+                    T_local = self.list16_to_matrix(L)
+                    print(f"[TP-UPD] Using stored local_mx_import for {obj.name}")
+
+            if T_local is None:
+                lp = obj.get("local_pos", None)
+                lq = obj.get("local_quat", None)
+                if lp and lq and len(lp) == 3 and len(lq) == 4:
+                    T_local = self.build_matrix_from_locquat(lp, lq)
+                    print(f"[TP-UPD] Using local_pos/local_quat for {obj.name}")
+
+            if T_local is None:
+                print(f"[TP-UPD][WARN] No local pose for {obj.name}")
+                continue
+
+            M_world = base.matrix_world @ T_local
+            obj.matrix_world = M_world
+            count += 1
+
+            b = base.matrix_world.decompose()[0]
+            t = M_world.decompose()[0]
+            print(f"[TP-UPD] Updated {obj.name}  base=({b.x:.6f},{b.y:.6f},{b.z:.6f})  tcp=({t.x:.6f},{t.y:.6f},{t.z:.6f})")
+
+        if self.also_refresh_lists:
+            try:
+                bpy.ops.object.refresh_tcp_list()
+            except Exception as e:
+                print(f"[TP-UPD][WARN] refresh_tcp_list failed: {e}")
+
+        if self.try_update_all_tcp_poses:
+            try:
+                bpy.ops.object.update_all_tcp_poses()
+            except Exception as e:
+                print(f"[TP-UPD][WARN] update_all_tcp_poses skipped/failed: {e}")
+
+        self.report({'INFO'}, f"Updated {count} TP(s)")
+        return {'FINISHED'}
+
 # ──────────────────────────────────────────────────────────────    
 classes = (
     OBJECT_OT_keyframe_joint_pose,
@@ -881,4 +1037,5 @@ classes = (
     OBJECT_OT_preview_stage_tcp_prev_pose,
     OBJECT_OT_preview_stage_tcp_next_pose,
     OBJECT_OT_preview_stage_tcp_pose,
+    OBJECT_OT_update_tp_from_jointpose,
 )
