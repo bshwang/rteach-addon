@@ -389,6 +389,12 @@ class IKMotionProperties(bpy.types.PropertyGroup):
         default=(True,)*8
     )
 
+    csv_import_frame_step: bpy.props.EnumProperty(
+        name="CSV Frame Step",
+        items=[('10','10',''),('20','20',''),('30','30',''),('40','40',''),('50','50','')],
+        default='20'
+    )
+
     xaxis_mode: bpy.props.EnumProperty(
         name="X-Axis",
         items=[
