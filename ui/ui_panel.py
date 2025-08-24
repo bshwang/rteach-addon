@@ -555,34 +555,23 @@ class VIEW3D_PT_ur_ik(bpy.types.Panel):
         # Import Data (JSON)
         box.separator()
         box.label(text="🔸 Import Data")
-        row = box.row(align=True)
-        split = row.split(factor=0.85)
-        split.prop(p, "import_teach_filename", text="")
-        split.operator("object.import_teach_data", text="", icon='IMPORT')
-        
-        row = box.row(align=True)
-        split = row.split(factor=0.85)
-        split.prop(p, "import_joint_csv_filename", text="")
-        split.operator("object.import_joint_csv", text="", icon='IMPORT')
 
-        # PMBot Beta Import
         row = box.row(align=True)
-        row.operator("object.import_pmbot_beta_data", text="Import PMBot Beta", icon='IMPORT')
+        row.operator("object.import_teach_data", text="JSON", icon='FILE_FOLDER')
+        row.operator("object.import_joint_csv", text="CSV", icon='FILE_FOLDER')
         row = box.row(align=True)
-        row.operator("object.bake_keyframes_from_pmbot_xml", text="Bake Keyframes from PMBot XML", icon='KEY_HLT')
+        row.prop(p, "csv_import_frame_step", text="CSV Frame Step")
 
         # Export Data
         box.separator()
         box.label(text="🔸 Export Data")
         row = box.row(align=True)
-        split = row.split(factor=0.85)
-        split.prop(p, "export_teach_filename", text="")
-        split.operator("object.export_teach_data", text="", icon='EXPORT')
-
-        row = box.row(align=True)
-        split = row.split(factor=0.85)
-        split.prop(p, "export_joint_csv_filename", text="")
-        split.operator("object.export_joint_graph_csv", text="", icon='EXPORT')
+        row.operator("object.export_teach_data", text="JSON", icon='FILE_FOLDER')
+        op_std = row.operator("object.export_joint_graph_csv", text="CSV(tp)", icon='FILE_FOLDER')
+        op_std.export_mode = 'STD_TCP'
+        op_std.frame_step = p.csv_import_frame_step
+        op_key = row.operator("object.export_joint_graph_csv", text="CSV(Key)", icon='FILE_FOLDER')
+        op_key.export_mode = 'KEYFRAME'
 
 classes = [
     UI_UL_tcp_list,
